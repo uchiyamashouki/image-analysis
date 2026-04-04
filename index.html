@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>投球・腰軌道トラッカー</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <h1>投球・腰軌道トラッカー</h1>
+      <p>
+        単一カメラの投球動画から、腰の移動軌道・簡易奥行き補正・ステップ幅概算を行います。
+        GitHub Pages でそのまま動く構成です。
+      </p>
+    </header>
+
+    <section class="panel controls">
+      <h2>入力</h2>
+
+      <div class="grid">
+        <label class="field">
+          <span>動画ファイル</span>
+          <input id="videoFile" type="file" accept="video/*" />
+        </label>
+
+        <label class="field">
+          <span>投手の身長 (cm)</span>
+          <input id="heightCm" type="number" min="100" max="250" step="0.1" value="180" />
+        </label>
+
+        <label class="field">
+          <span>利き腕</span>
+          <select id="throwingHand">
+            <option value="right">右投げ</option>
+            <option value="left">左投げ</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>解析FPS</span>
+          <input id="analysisFps" type="number" min="5" max="60" step="1" value="20" />
+        </label>
+
+        <label class="field">
+          <span>軌道の平滑化窓</span>
+          <input id="smoothWindow" type="number" min="1" max="31" step="2" value="7" />
+        </label>
+
+        <label class="field">
+          <span>表示する軌道の長さ (フレーム)</span>
+          <input id="trailLength" type="number" min="5" max="300" step="1" value="50" />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="loadDemoBtn" type="button" class="secondary">入力だけ確認</button>
+        <button id="analyzeBtn" type="button" class="primary">解析開始</button>
+        <button id="stopBtn" type="button" class="danger" disabled>停止</button>
+      </div>
+
+      <div class="progress-wrap">
+        <progress id="progressBar" value="0" max="1"></progress>
+        <div id="statusText">モデル未初期化</div>
+      </div>
+
+      <details class="tips">
+        <summary>使い方のコツ</summary>
+        <ul>
+          <li>なるべく真横に近い動画が向いています。</li>
+          <li>全身が映っているほど補正が安定します。</li>
+          <li>ズーム変化や激しいカメラ移動が少ない動画の方が良いです。</li>
+          <li>長い動画は先にトリミングすると快適です。</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="panel viewer">
+      <h2>映像プレビュー</h2>
+      <div class="canvas-wrap">
+        <canvas id="overlayCanvas"></canvas>
+      </div>
+      <video id="sourceVideo" playsinline muted preload="metadata" hidden></video>
+    </section>
+
+    <section class="panel summary">
+      <h2>解析結果</h2>
+      <div id="summaryCards" class="cards">
+        <div class="card">
+          <div class="label">最大ステップ幅</div>
+          <div class="value" id="metricStepWidth">-</div>
+        </div>
+        <div class="card">
+          <div class="label">腰の前後移動範囲</div>
+          <div class="value" id="metricHipXRange">-</div>
+        </div>
+        <div class="card">
+          <div class="label">腰の上下移動範囲</div>
+          <div class="value" id="metricHipYRange">-</div>
+        </div>
+        <div class="card">
+          <div class="label">最大腰速度</div>
+          <div class="value" id="metricHipSpeed">-</div>
+        </div>
+        <div class="card">
+          <div class="label">推定下肢長</div>
+          <div class="value" id="metricLegLength">-</div>
+        </div>
+        <div class="card">
+          <div class="label">ステップ幅 / 推定下肢長</div>
+          <div class="value" id="metricStepRatio">-</div>
+        </div>
+      </div>
+
+      <div class="note">
+        ※ 単一カメラの簡易解析です。絶対値の厳密測定ではなく、投手間比較や特徴把握向けです。
+      </div>
+    </section>
+
+    <section class="panel charts">
+      <h2>腰軌道</h2>
+      <div class="chart-grid">
+        <div class="chart-box">
+          <h3>XY軌道</h3>
+          <canvas id="trajectoryCanvas" width="900" height="520"></canvas>
+        </div>
+        <div class="chart-box">
+          <h3>時系列</h3>
+          <canvas id="timeseriesCanvas" width="900" height="520"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel exports">
+      <h2>出力</h2>
+      <div class="actions">
+        <button id="downloadCsvBtn" type="button" disabled>CSVダウンロード</button>
+        <button id="downloadPngBtn" type="button" disabled>軌道PNGダウンロード</button>
+        <button id="exportVideoBtn" type="button" disabled>注釈付き動画を書き出し</button>
+      </div>
+      <div id="exportStatus" class="export-status">未出力</div>
+    </section>
+  </div>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
