@@ -9,6 +9,7 @@ import {
 let poseLandmarker = null;
 let activeWorkspaceAnalysisId = null;
 let workspaceUidCounter = 0;
+let poseLastVideoTimestampMs = 0;
 
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
@@ -855,6 +856,8 @@ class AnalysisWorkspace {
     this.exportVideoBtn.disabled = true;
     this.setExportStatus("未出力");
 
+    let analysisEndTimestampMs = null;
+
     try {
       this.setStatus("モデル初期化中...");
       await ensurePoseLandmarker();
@@ -863,6 +866,7 @@ class AnalysisWorkspace {
       const duration = this.sourceVideo.duration;
       const dt = 1 / analysisFps;
       const times = buildSampleTimes(duration, analysisFps);
+      const runStartTimestampMs = poseLastVideoTimestampMs + 1000;
 
       const frames = [];
       const trail = [];
@@ -879,7 +883,8 @@ class AnalysisWorkspace {
         this.sourceVideo.currentTime = t;
         await waitEvent(this.sourceVideo, "seeked");
 
-        const result = poseLandmarker.detectForVideo(this.sourceVideo, Math.round(t * 1000));
+        const tsMs = runStartTimestampMs + Math.round(t * 1000);
+        const result = poseLandmarker.detectForVideo(this.sourceVideo, tsMs);
         drawVideoFrame(this.overlayCtx, this.sourceVideo, this.overlayCanvas);
 
         let landmarks = null;
@@ -1076,11 +1081,15 @@ class AnalysisWorkspace {
       this.exportVideoBtn.disabled = false;
 
       this.setStatus("解析完了");
+      analysisEndTimestampMs = runStartTimestampMs + Math.round(duration * 1000) + 1000;
     } catch (err) {
       console.error(err);
       alert(err.message || "解析に失敗しました。");
       this.setStatus("解析失敗");
     } finally {
+      if (analysisEndTimestampMs != null) {
+        poseLastVideoTimestampMs = Math.max(poseLastVideoTimestampMs, analysisEndTimestampMs);
+      }
       activeWorkspaceAnalysisId = null;
       this.analyzeBtn.disabled = false;
       this.stopBtn.disabled = true;
