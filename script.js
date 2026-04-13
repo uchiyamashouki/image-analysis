@@ -375,11 +375,11 @@ function clearChart(ctx, canvas, title = "") {
 }
 
 function drawTrajectoryChart(ctx, canvas, result) {
-  clearChart(ctx, canvas, "腰軌道 XY");
+  clearChart(ctx, canvas, "腰軌道 YZ");
   if (!result || !result.frames.length) return;
 
   const x = result.frames.map((f) => f.hipForwardCmSmooth);
-  const y = result.frames.map((f) => f.hipSideCmSmooth);
+  const y = result.frames.map((f) => f.hipHeadCmSmooth);
 
   const valid = x
     .map((vx, i) => ({ x: vx, y: y[i] }))
@@ -466,7 +466,7 @@ function drawTrajectoryChart(ctx, canvas, result) {
   ctx.save();
   ctx.translate(24, padT + h / 2 + 40);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText("腹背方向 (cm, 90°/270°)", 0, 0);
+  ctx.fillText("頭側方向 (cm, 頭側が＋)", 0, 0);
   ctx.restore();
 }
 
@@ -477,7 +477,7 @@ function drawTimeSeriesChart(ctx, canvas, result) {
   const frames = result.frames;
   const times = frames.map((f) => f.timeSec);
   const xVals = frames.map((f) => f.hipForwardCmSmooth);
-  const yVals = frames.map((f) => f.hipSideCmSmooth);
+  const yVals = frames.map((f) => f.hipHeadCmSmooth);
 
   const validVals = [...xVals, ...yVals].filter(isFiniteNumber);
   if (!validVals.length) return;
@@ -549,7 +549,7 @@ function drawTimeSeriesChart(ctx, canvas, result) {
   ctx.fillStyle = "#111827";
   ctx.font = "16px sans-serif";
   ctx.fillText("青: 投球方向", padL, 28);
-  ctx.fillText("赤: 腹背方向", padL + 160, 28);
+  ctx.fillText("赤: 頭側方向", padL + 160, 28);
   ctx.fillText("時間 (s)", padL + w / 2 - 20, canvas.height - 18);
 }
 
@@ -647,7 +647,7 @@ class AnalysisWorkspace {
     this.overlayCtx.font = "24px sans-serif";
     this.overlayCtx.fillText("動画を選択するとここにプレビューが表示されます", 40, 60);
 
-    clearChart(this.trajCtx, this.trajectoryCanvas, "腰軌道 XY");
+    clearChart(this.trajCtx, this.trajectoryCanvas, "腰軌道 YZ");
     clearChart(this.tsCtx, this.timeseriesCanvas, "時系列");
     this.setStatus("未初期化");
     this.setExportStatus("未出力");
@@ -723,8 +723,10 @@ class AnalysisWorkspace {
       "hip_dy_cm_corr",
       "hip_forward_cm_raw",
       "hip_side_cm_raw",
+      "hip_head_cm_raw",
       "hip_forward_cm_smooth",
       "hip_side_cm_smooth",
+      "hip_head_cm_smooth",
       "hip_dx_cm_smooth",
       "hip_dy_cm_smooth",
       "hip_vx_cm_s",
@@ -750,8 +752,10 @@ class AnalysisWorkspace {
       f.hipDyCmCorr,
       f.hipForwardCmRaw,
       f.hipSideCmRaw,
+      f.hipHeadCmRaw,
       f.hipForwardCmSmooth,
       f.hipSideCmSmooth,
+      f.hipHeadCmSmooth,
       f.hipDxCmSmooth,
       f.hipDyCmSmooth,
       f.hipVxCmS,
@@ -818,7 +822,7 @@ class AnalysisWorkspace {
     const lines = [
       `time: ${round(frame.timeSec, 2)} s`,
       `hip 0°: ${round(frame.hipForwardCmSmooth, 1)} cm`,
-      `hip 90/270°: ${round(frame.hipSideCmSmooth, 1)} cm`,
+      `hip 頭側: ${round(frame.hipHeadCmSmooth, 1)} cm`,
       `hip speed: ${round(frame.hipSpeedCmS, 1)} cm/s`,
       `depth corr: ${round(frame.depthCorrection, 3)}`
     ];
@@ -1060,10 +1064,12 @@ class AnalysisWorkspace {
         const hipFromAxisY = -((f.hipYpx - originAxisY) / f.pxPerCm) * f.depthCorrection;
         f.hipForwardCmRaw = hipFromAxisX * forwardUnit.x + hipFromAxisY * forwardUnit.y;
         f.hipSideCmRaw = hipFromAxisX * sideUnit.x + hipFromAxisY * sideUnit.y;
+        f.hipHeadCmRaw = hipFromAxisY;
       }
 
       const smoothX = movingAverage(frames.map((f) => f.hipForwardCmRaw), smoothWindow);
       const smoothY = movingAverage(frames.map((f) => f.hipSideCmRaw), smoothWindow);
+      const smoothHead = movingAverage(frames.map((f) => f.hipHeadCmRaw), smoothWindow);
 
       smoothX.forEach((v, i) => {
         frames[i].hipForwardCmSmooth = v;
@@ -1072,6 +1078,9 @@ class AnalysisWorkspace {
       smoothY.forEach((v, i) => {
         frames[i].hipSideCmSmooth = v;
         frames[i].hipDyCmSmooth = v;
+      });
+      smoothHead.forEach((v, i) => {
+        frames[i].hipHeadCmSmooth = v;
       });
 
       const vx = gradient(smoothX, dt);
