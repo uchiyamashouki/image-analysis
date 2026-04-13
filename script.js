@@ -91,6 +91,7 @@ function movingAverage(arr, windowSize = 5) {
 function interpolateSeries(arr) {
   const out = arr.slice();
   let lastValid = -1;
+  let filledCount = 0;
 
   for (let i = 0; i < out.length; i++) {
     if (isFiniteNumber(out[i])) {
@@ -110,15 +111,21 @@ function interpolateSeries(arr) {
       out[i] = NaN;
     } else if (lastValid === -1) {
       out[i] = out[nextValid];
+      filledCount += 1;
     } else if (nextValid === -1) {
       out[i] = out[lastValid];
+      filledCount += 1;
     } else {
       const ratio = (i - lastValid) / (nextValid - lastValid);
       out[i] = out[lastValid] + (out[nextValid] - out[lastValid]) * ratio;
+      filledCount += 1;
     }
   }
 
-  return out;
+  return {
+    values: out,
+    filledCount
+  };
 }
 
 function gradient(arr, dt) {
@@ -176,6 +183,44 @@ function drawTextBlock(ctx, lines, x, y) {
   ctx.restore();
 }
 
+function csvEscape(value) {
+  if (value == null) return "";
+  const text = `${value}`;
+  if (!/[",\n]/.test(text)) return text;
+  return `"${text.replace(/"/g, "\"\"")}"`;
+}
+
+function buildSampleTimes(duration, fps) {
+  const safeFps = Math.max(1, Math.floor(fps));
+  const frameCount = Math.max(1, Math.floor(duration * safeFps) + 1);
+  const times = [];
+
+  for (let i = 0; i < frameCount; i++) {
+    const t = Math.min(i / safeFps, duration);
+    if (!times.length || Math.abs(t - times[times.length - 1]) > 1e-7) {
+      times.push(t);
+    }
+  }
+
+  if (times[times.length - 1] < duration) {
+    times.push(duration);
+  }
+
+  return times;
+}
+
+function safeRange(values) {
+  const valid = values.filter(isFiniteNumber);
+  if (!valid.length) return NaN;
+  return Math.max(...valid) - Math.min(...valid);
+}
+
+function safeMax(values) {
+  const valid = values.filter(isFiniteNumber);
+  if (!valid.length) return NaN;
+  return Math.max(...valid);
+}
+
 /* =========================
    MediaPipe helpers
 ========================= */
@@ -201,6 +246,7 @@ async function ensurePoseLandmarker() {
 function getLandmarkXY(landmarks, idx, width, height) {
   if (!landmarks || !landmarks[idx]) return null;
   const lm = landmarks[idx];
+  if (isFiniteNumber(lm.visibility) && lm.visibility < 0.3) return null;
   return {
     x: lm.x * width,
     y: lm.y * height,
@@ -652,6 +698,7 @@ class AnalysisWorkspace {
     const header = [
       "frame",
       "time_sec",
+      "landmark_detected",
       "hip_x_px",
       "hip_y_px",
       "body_height_px",
@@ -674,6 +721,7 @@ class AnalysisWorkspace {
     const rows = result.frames.map((f) => [
       f.index,
       f.timeSec,
+      f.landmarkDetected ? 1 : 0,
       f.hipXpx,
       f.hipYpx,
       f.bodyHeightPx,
@@ -694,7 +742,7 @@ class AnalysisWorkspace {
     ]);
 
     return [header, ...rows]
-      .map((row) => row.map((v) => (v == null ? "" : `${v}`)).join(","))
+      .map((row) => row.map(csvEscape).join(","))
       .join("\n");
   }
 
@@ -771,6 +819,7 @@ class AnalysisWorkspace {
 
     this.stopRequested = false;
     this.latestResult = null;
+    this.interpolationStats = { total: 0, filled: 0 };
     this.progressBar.value = 0;
     this.analyzeBtn.disabled = true;
     this.stopBtn.disabled = false;
@@ -786,10 +835,7 @@ class AnalysisWorkspace {
 
       const duration = this.sourceVideo.duration;
       const dt = 1 / analysisFps;
-      const times = [];
-      for (let t = 0; t <= duration; t += dt) {
-        times.push(Math.min(t, duration));
-      }
+      const times = buildSampleTimes(duration, analysisFps);
 
       const frames = [];
       const trail = [];
@@ -847,6 +893,7 @@ class AnalysisWorkspace {
         frames.push({
           index: i,
           timeSec: t,
+          landmarkDetected: Boolean(landmarks),
           landmarks,
           hipXpx: hipMid ? hipMid.x : NaN,
           hipYpx: hipMid ? hipMid.y : NaN,
@@ -888,9 +935,12 @@ class AnalysisWorkspace {
       for (const col of cols) {
         const series = frames.map((f) => f[col]);
         const interp = interpolateSeries(series);
-        interp.forEach((v, idx) => {
+        interp.values.forEach((v, idx) => {
           frames[idx][col] = v;
         });
+        if (!this.interpolationStats) this.interpolationStats = { total: 0, filled: 0 };
+        this.interpolationStats.total += series.length;
+        this.interpolationStats.filled += interp.filledCount;
       }
 
       const refBodyHeightPx = median(frames.map((f) => f.bodyHeightPx));
@@ -909,12 +959,13 @@ class AnalysisWorkspace {
 
       const originX = firstValidFrame.hipXpx;
       const originY = firstValidFrame.hipYpx;
+      const handednessXSign = throwingHand === "left" ? -1 : 1;
 
       for (const f of frames) {
         f.pxPerCm = f.bodyHeightPx / heightCm;
         f.depthCorrection = clamp(refPxPerCm / f.pxPerCm, 0.8, 1.25);
 
-        const dxCmRaw = (f.hipXpx - originX) / f.pxPerCm;
+        const dxCmRaw = ((f.hipXpx - originX) / f.pxPerCm) * handednessXSign;
         const dyCmRaw = -(f.hipYpx - originY) / f.pxPerCm;
 
         f.hipDxCmRaw = dxCmRaw;
@@ -948,20 +999,26 @@ class AnalysisWorkspace {
       const estimatedLegLengthCm = heightCm * 0.53;
       const stepRatio = estimatedStepWidthCm / estimatedLegLengthCm;
 
-      const xVals = frames.map((f) => f.hipDxCmSmooth).filter(isFiniteNumber);
-      const yVals = frames.map((f) => f.hipDyCmSmooth).filter(isFiniteNumber);
-      const speedVals = frames.map((f) => f.hipSpeedCmS).filter(isFiniteNumber);
+      const xVals = frames.map((f) => f.hipDxCmSmooth);
+      const yVals = frames.map((f) => f.hipDyCmSmooth);
+      const speedVals = frames.map((f) => f.hipSpeedCmS);
+      const detectedCount = frames.filter((f) => f.landmarkDetected).length;
+      const interpolationRate = this.interpolationStats?.total
+        ? this.interpolationStats.filled / this.interpolationStats.total
+        : NaN;
 
       const metrics = {
         stepWidthCm: estimatedStepWidthCm,
         legLengthCm: estimatedLegLengthCm,
         stepRatio,
-        hipXRangeCm: Math.max(...xVals) - Math.min(...xVals),
-        hipYRangeCm: Math.max(...yVals) - Math.min(...yVals),
-        maxHipSpeedCmS: Math.max(...speedVals),
+        hipXRangeCm: safeRange(xVals),
+        hipYRangeCm: safeRange(yVals),
+        maxHipSpeedCmS: safeMax(speedVals),
         stepFrameIndex: stepFrame?.index ?? -1,
         stepTimeSec: stepFrame?.timeSec ?? NaN,
-        refBodyHeightPx
+        refBodyHeightPx,
+        detectedFrameRate: detectedCount / frames.length,
+        interpolationRate
       };
 
       this.latestResult = {
