@@ -4,65 +4,16 @@ import {
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
 
 /* =========================
-   DOM
-========================= */
-const videoFileInput = document.getElementById("videoFile");
-const heightCmInput = document.getElementById("heightCm");
-const throwingHandSelect = document.getElementById("throwingHand");
-const analysisFpsInput = document.getElementById("analysisFps");
-const smoothWindowInput = document.getElementById("smoothWindow");
-const trailLengthInput = document.getElementById("trailLength");
-
-const loadDemoBtn = document.getElementById("loadDemoBtn");
-const analyzeBtn = document.getElementById("analyzeBtn");
-const stopBtn = document.getElementById("stopBtn");
-
-const progressBar = document.getElementById("progressBar");
-const statusText = document.getElementById("statusText");
-const exportStatus = document.getElementById("exportStatus");
-
-const overlayCanvas = document.getElementById("overlayCanvas");
-const overlayCtx = overlayCanvas.getContext("2d");
-const sourceVideo = document.getElementById("sourceVideo");
-
-const trajectoryCanvas = document.getElementById("trajectoryCanvas");
-const trajCtx = trajectoryCanvas.getContext("2d");
-const timeseriesCanvas = document.getElementById("timeseriesCanvas");
-const tsCtx = timeseriesCanvas.getContext("2d");
-
-const metricStepWidth = document.getElementById("metricStepWidth");
-const metricHipXRange = document.getElementById("metricHipXRange");
-const metricHipYRange = document.getElementById("metricHipYRange");
-const metricHipSpeed = document.getElementById("metricHipSpeed");
-const metricLegLength = document.getElementById("metricLegLength");
-const metricStepRatio = document.getElementById("metricStepRatio");
-
-const downloadCsvBtn = document.getElementById("downloadCsvBtn");
-const downloadPngBtn = document.getElementById("downloadPngBtn");
-const exportVideoBtn = document.getElementById("exportVideoBtn");
-
-/* =========================
    MediaPipe
 ========================= */
 let poseLandmarker = null;
 
-/* =========================
-   State
-========================= */
-let currentVideoFile = null;
-let latestResult = null;
-let stopRequested = false;
-
-/* =========================
-   定数
-========================= */
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
 
 const WASM_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
 
-// MediaPipe Pose Landmarker 33点のインデックス
 const IDX = {
   NOSE: 0,
   LEFT_EYE: 2,
@@ -91,16 +42,8 @@ const POSE_CONNECTIONS = [
 ];
 
 /* =========================
-   共通
+   Utility
 ========================= */
-function setStatus(text) {
-  statusText.textContent = text;
-}
-
-function setExportStatus(text) {
-  exportStatus.textContent = text;
-}
-
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -154,6 +97,7 @@ function interpolateSeries(arr) {
       lastValid = i;
       continue;
     }
+
     let nextValid = -1;
     for (let j = i + 1; j < out.length; j++) {
       if (isFiniteNumber(out[j])) {
@@ -173,30 +117,18 @@ function interpolateSeries(arr) {
       out[i] = out[lastValid] + (out[nextValid] - out[lastValid]) * ratio;
     }
   }
+
   return out;
 }
 
 function gradient(arr, dt) {
   const out = new Array(arr.length).fill(NaN);
   for (let i = 0; i < arr.length; i++) {
-    if (i === 0) {
-      out[i] = (arr[i + 1] - arr[i]) / dt;
-    } else if (i === arr.length - 1) {
-      out[i] = (arr[i] - arr[i - 1]) / dt;
-    } else {
-      out[i] = (arr[i + 1] - arr[i - 1]) / (2 * dt);
-    }
+    if (i === 0) out[i] = (arr[i + 1] - arr[i]) / dt;
+    else if (i === arr.length - 1) out[i] = (arr[i] - arr[i - 1]) / dt;
+    else out[i] = (arr[i + 1] - arr[i - 1]) / (2 * dt);
   }
   return out;
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function filenameBase(name) {
@@ -212,6 +144,15 @@ function waitEvent(target, eventName) {
     };
     target.addEventListener(eventName, handler, { once: true });
   });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function drawTextBlock(ctx, lines, x, y) {
@@ -231,18 +172,17 @@ function drawTextBlock(ctx, lines, x, y) {
   lines.forEach((line, i) => {
     ctx.fillText(line, x + padding, y + padding + i * lineH);
   });
+
   ctx.restore();
 }
 
 /* =========================
-   MediaPipe 初期化
+   MediaPipe helpers
 ========================= */
 async function ensurePoseLandmarker() {
   if (poseLandmarker) return poseLandmarker;
 
-  setStatus("MediaPipeモデルを初期化中...");
   const vision = await FilesetResolver.forVisionTasks(WASM_URL);
-
   poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: MODEL_URL,
@@ -255,13 +195,9 @@ async function ensurePoseLandmarker() {
     minTrackingConfidence: 0.5
   });
 
-  setStatus("モデル初期化完了");
   return poseLandmarker;
 }
 
-/* =========================
-   ランドマーク補助
-========================= */
 function getLandmarkXY(landmarks, idx, width, height) {
   if (!landmarks || !landmarks[idx]) return null;
   const lm = landmarks[idx];
@@ -306,7 +242,7 @@ function estimateBodyHeightPx(landmarks, width, height) {
 }
 
 /* =========================
-   描画
+   Drawing
 ========================= */
 function drawVideoFrame(ctx, video, canvas) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -370,11 +306,12 @@ function drawTrail(ctx, trail, trailLength) {
     ctx.arc(latest.x, latest.y, 8, 0, Math.PI * 2);
     ctx.fill();
   }
+
   ctx.restore();
 }
 
 /* =========================
-   グラフ
+   Charts
 ========================= */
 function clearChart(ctx, canvas, title = "") {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -388,9 +325,8 @@ function clearChart(ctx, canvas, title = "") {
   }
 }
 
-function drawTrajectoryChart(result) {
-  clearChart(trajCtx, trajectoryCanvas, "腰軌道 XY");
-
+function drawTrajectoryChart(ctx, canvas, result) {
+  clearChart(ctx, canvas, "腰軌道 XY");
   if (!result || !result.frames.length) return;
 
   const x = result.frames.map((f) => f.hipDxCmSmooth);
@@ -406,8 +342,8 @@ function drawTrajectoryChart(result) {
   const padR = 40;
   const padT = 60;
   const padB = 70;
-  const w = trajectoryCanvas.width - padL - padR;
-  const h = trajectoryCanvas.height - padT - padB;
+  const w = canvas.width - padL - padR;
+  const h = canvas.height - padT - padB;
 
   const minX = Math.min(...valid.map((p) => p.x));
   const maxX = Math.max(...valid.map((p) => p.x));
@@ -426,62 +362,61 @@ function drawTrajectoryChart(result) {
     return padT + h - ((v - y0) / (y1 - y0)) * h;
   }
 
-  trajCtx.strokeStyle = "#d1d5db";
-  trajCtx.lineWidth = 1;
+  ctx.strokeStyle = "#d1d5db";
+  ctx.lineWidth = 1;
 
   for (let i = 0; i <= 5; i++) {
     const yy = padT + (h / 5) * i;
-    trajCtx.beginPath();
-    trajCtx.moveTo(padL, yy);
-    trajCtx.lineTo(padL + w, yy);
-    trajCtx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(padL, yy);
+    ctx.lineTo(padL + w, yy);
+    ctx.stroke();
   }
   for (let i = 0; i <= 5; i++) {
     const xx = padL + (w / 5) * i;
-    trajCtx.beginPath();
-    trajCtx.moveTo(xx, padT);
-    trajCtx.lineTo(xx, padT + h);
-    trajCtx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(xx, padT);
+    ctx.lineTo(xx, padT + h);
+    ctx.stroke();
   }
 
-  trajCtx.strokeStyle = "#2563eb";
-  trajCtx.lineWidth = 3;
-  trajCtx.beginPath();
+  ctx.strokeStyle = "#2563eb";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
   valid.forEach((p, i) => {
     const px = sx(p.x);
     const py = sy(p.y);
-    if (i === 0) trajCtx.moveTo(px, py);
-    else trajCtx.lineTo(px, py);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
   });
-  trajCtx.stroke();
+  ctx.stroke();
 
   const first = valid[0];
   const last = valid[valid.length - 1];
 
-  trajCtx.fillStyle = "#16a34a";
-  trajCtx.beginPath();
-  trajCtx.arc(sx(first.x), sy(first.y), 7, 0, Math.PI * 2);
-  trajCtx.fill();
+  ctx.fillStyle = "#16a34a";
+  ctx.beginPath();
+  ctx.arc(sx(first.x), sy(first.y), 7, 0, Math.PI * 2);
+  ctx.fill();
 
-  trajCtx.fillStyle = "#dc2626";
-  trajCtx.beginPath();
-  trajCtx.arc(sx(last.x), sy(last.y), 7, 0, Math.PI * 2);
-  trajCtx.fill();
+  ctx.fillStyle = "#dc2626";
+  ctx.beginPath();
+  ctx.arc(sx(last.x), sy(last.y), 7, 0, Math.PI * 2);
+  ctx.fill();
 
-  trajCtx.fillStyle = "#111827";
-  trajCtx.font = "16px sans-serif";
-  trajCtx.fillText("前後移動 (cm)", padL + w / 2 - 42, trajectoryCanvas.height - 20);
+  ctx.fillStyle = "#111827";
+  ctx.font = "16px sans-serif";
+  ctx.fillText("前後移動 (cm)", padL + w / 2 - 42, canvas.height - 20);
 
-  trajCtx.save();
-  trajCtx.translate(24, padT + h / 2 + 40);
-  trajCtx.rotate(-Math.PI / 2);
-  trajCtx.fillText("上下移動 (cm, 上が＋)", 0, 0);
-  trajCtx.restore();
+  ctx.save();
+  ctx.translate(24, padT + h / 2 + 40);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText("上下移動 (cm, 上が＋)", 0, 0);
+  ctx.restore();
 }
 
-function drawTimeSeriesChart(result) {
-  clearChart(tsCtx, timeseriesCanvas, "時系列");
-
+function drawTimeSeriesChart(ctx, canvas, result) {
+  clearChart(ctx, canvas, "時系列");
   if (!result || !result.frames.length) return;
 
   const frames = result.frames;
@@ -496,8 +431,8 @@ function drawTimeSeriesChart(result) {
   const padR = 40;
   const padT = 60;
   const padB = 60;
-  const w = timeseriesCanvas.width - padL - padR;
-  const h = timeseriesCanvas.height - padT - padB;
+  const w = canvas.width - padL - padR;
+  const h = canvas.height - padT - padB;
 
   const minT = Math.min(...times);
   const maxT = Math.max(...times);
@@ -511,544 +446,690 @@ function drawTimeSeriesChart(result) {
     return padT + h - ((v - minV) / Math.max(0.0001, maxV - minV)) * h;
   }
 
-  tsCtx.strokeStyle = "#d1d5db";
-  tsCtx.lineWidth = 1;
+  ctx.strokeStyle = "#d1d5db";
+  ctx.lineWidth = 1;
 
   for (let i = 0; i <= 5; i++) {
     const yy = padT + (h / 5) * i;
-    tsCtx.beginPath();
-    tsCtx.moveTo(padL, yy);
-    tsCtx.lineTo(padL + w, yy);
-    tsCtx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(padL, yy);
+    ctx.lineTo(padL + w, yy);
+    ctx.stroke();
   }
 
-  tsCtx.strokeStyle = "#2563eb";
-  tsCtx.lineWidth = 3;
-  tsCtx.beginPath();
+  ctx.strokeStyle = "#2563eb";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  let startedX = false;
   xVals.forEach((v, i) => {
     if (!isFiniteNumber(v)) return;
     const px = sx(times[i]);
     const py = sy(v);
-    if (i === 0) tsCtx.moveTo(px, py);
-    else tsCtx.lineTo(px, py);
+    if (!startedX) {
+      ctx.moveTo(px, py);
+      startedX = true;
+    } else {
+      ctx.lineTo(px, py);
+    }
   });
-  tsCtx.stroke();
+  ctx.stroke();
 
-  tsCtx.strokeStyle = "#dc2626";
-  tsCtx.lineWidth = 3;
-  tsCtx.beginPath();
+  ctx.strokeStyle = "#dc2626";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  let startedY = false;
   yVals.forEach((v, i) => {
     if (!isFiniteNumber(v)) return;
     const px = sx(times[i]);
     const py = sy(v);
-    if (i === 0) tsCtx.moveTo(px, py);
-    else tsCtx.lineTo(px, py);
+    if (!startedY) {
+      ctx.moveTo(px, py);
+      startedY = true;
+    } else {
+      ctx.lineTo(px, py);
+    }
   });
-  tsCtx.stroke();
+  ctx.stroke();
 
-  tsCtx.fillStyle = "#111827";
-  tsCtx.font = "16px sans-serif";
-  tsCtx.fillText("青: 前後移動", padL, 28);
-  tsCtx.fillText("赤: 上下移動", padL + 160, 28);
-  tsCtx.fillText("時間 (s)", padL + w / 2 - 20, timeseriesCanvas.height - 18);
+  ctx.fillStyle = "#111827";
+  ctx.font = "16px sans-serif";
+  ctx.fillText("青: 前後移動", padL, 28);
+  ctx.fillText("赤: 上下移動", padL + 160, 28);
+  ctx.fillText("時間 (s)", padL + w / 2 - 20, canvas.height - 18);
 }
 
 /* =========================
-   入力動画準備
+   Workspace class
 ========================= */
-async function loadVideoFile(file) {
-  if (!file) throw new Error("動画ファイルが選択されていません。");
+class AnalysisWorkspace {
+  constructor(rootEl, index) {
+    this.root = rootEl;
+    this.index = index;
+    this.stopRequested = false;
+    this.currentVideoFile = null;
+    this.latestResult = null;
+    this.videoObjectUrl = null;
 
-  currentVideoFile = file;
-  sourceVideo.pause();
-  sourceVideo.removeAttribute("src");
-  sourceVideo.load();
-
-  const objectUrl = URL.createObjectURL(file);
-  sourceVideo.src = objectUrl;
-
-  await waitEvent(sourceVideo, "loadedmetadata");
-
-  overlayCanvas.width = sourceVideo.videoWidth;
-  overlayCanvas.height = sourceVideo.videoHeight;
-  drawVideoFrame(overlayCtx, sourceVideo, overlayCanvas);
-
-  setStatus(`動画読込完了: ${file.name} (${round(sourceVideo.duration, 2)}秒)`);
-}
-
-/* =========================
-   解析本体
-========================= */
-async function analyzeCurrentVideo() {
-  const file = videoFileInput.files?.[0];
-  const heightCm = parseFloat(heightCmInput.value);
-  const throwingHand = throwingHandSelect.value;
-  const analysisFps = parseFloat(analysisFpsInput.value);
-  const smoothWindow = parseInt(smoothWindowInput.value, 10);
-  const trailLength = parseInt(trailLengthInput.value, 10);
-
-  if (!file) {
-    alert("動画ファイルを選択してください。");
-    return;
-  }
-  if (!isFiniteNumber(heightCm) || heightCm <= 0) {
-    alert("身長を正しく入力してください。");
-    return;
-  }
-  if (!isFiniteNumber(analysisFps) || analysisFps <= 0) {
-    alert("解析FPSを正しく入力してください。");
-    return;
+    this.bindDom();
+    this.attachEvents();
+    this.rename(index);
+    this.initCanvas();
   }
 
-  stopRequested = false;
-  latestResult = null;
-  progressBar.value = 0;
-  analyzeBtn.disabled = true;
-  stopBtn.disabled = false;
-  downloadCsvBtn.disabled = true;
-  downloadPngBtn.disabled = true;
-  exportVideoBtn.disabled = true;
-  setExportStatus("未出力");
+  bindDom() {
+    this.titleEl = this.root.querySelector(".workspace-title");
+    this.subtitleEl = this.root.querySelector(".workspace-subtitle");
 
-  try {
-    await ensurePoseLandmarker();
-    await loadVideoFile(file);
+    this.videoFileInput = this.root.querySelector(".videoFile");
+    this.heightCmInput = this.root.querySelector(".heightCm");
+    this.throwingHandSelect = this.root.querySelector(".throwingHand");
+    this.analysisFpsInput = this.root.querySelector(".analysisFps");
+    this.smoothWindowInput = this.root.querySelector(".smoothWindow");
+    this.trailLengthInput = this.root.querySelector(".trailLength");
 
-    const duration = sourceVideo.duration;
-    const dt = 1 / analysisFps;
-    const times = [];
-    for (let t = 0; t <= duration; t += dt) {
-      times.push(Math.min(t, duration));
-    }
+    this.loadBtn = this.root.querySelector(".loadBtn");
+    this.analyzeBtn = this.root.querySelector(".analyzeBtn");
+    this.stopBtn = this.root.querySelector(".stopBtn");
+    this.duplicateBtn = this.root.querySelector(".duplicateWorkspaceBtn");
+    this.removeBtn = this.root.querySelector(".removeWorkspaceBtn");
 
-    const frames = [];
-    const trail = [];
+    this.progressBar = this.root.querySelector(".progressBar");
+    this.statusText = this.root.querySelector(".statusText");
+    this.exportStatus = this.root.querySelector(".exportStatus");
 
-    setStatus("解析中...");
+    this.overlayCanvas = this.root.querySelector(".overlayCanvas");
+    this.overlayCtx = this.overlayCanvas.getContext("2d");
+    this.sourceVideo = this.root.querySelector(".sourceVideo");
 
-    for (let i = 0; i < times.length; i++) {
-      if (stopRequested) {
-        setStatus("停止しました");
-        break;
-      }
+    this.trajectoryCanvas = this.root.querySelector(".trajectoryCanvas");
+    this.trajCtx = this.trajectoryCanvas.getContext("2d");
+    this.timeseriesCanvas = this.root.querySelector(".timeseriesCanvas");
+    this.tsCtx = this.timeseriesCanvas.getContext("2d");
 
-      const t = times[i];
-      sourceVideo.currentTime = t;
-      await waitEvent(sourceVideo, "seeked");
+    this.metricStepWidth = this.root.querySelector(".metricStepWidth");
+    this.metricHipXRange = this.root.querySelector(".metricHipXRange");
+    this.metricHipYRange = this.root.querySelector(".metricHipYRange");
+    this.metricHipSpeed = this.root.querySelector(".metricHipSpeed");
+    this.metricLegLength = this.root.querySelector(".metricLegLength");
+    this.metricStepRatio = this.root.querySelector(".metricStepRatio");
 
-      const result = poseLandmarker.detectForVideo(sourceVideo, Math.round(t * 1000));
+    this.downloadCsvBtn = this.root.querySelector(".downloadCsvBtn");
+    this.downloadPngBtn = this.root.querySelector(".downloadPngBtn");
+    this.exportVideoBtn = this.root.querySelector(".exportVideoBtn");
+  }
 
-      drawVideoFrame(overlayCtx, sourceVideo, overlayCanvas);
-
-      let landmarks = null;
-      if (result.landmarks && result.landmarks.length > 0) {
-        landmarks = result.landmarks[0];
-      }
-
-      const width = overlayCanvas.width;
-      const height = overlayCanvas.height;
-
-      let hipMid = null;
-      let shoulderMid = null;
-      let leftAnkle = null;
-      let rightAnkle = null;
-      let bodyHeightPx = NaN;
-
-      if (landmarks) {
-        const leftHip = getLandmarkXY(landmarks, IDX.LEFT_HIP, width, height);
-        const rightHip = getLandmarkXY(landmarks, IDX.RIGHT_HIP, width, height);
-        hipMid = midpoint(leftHip, rightHip);
-
-        const leftShoulder = getLandmarkXY(landmarks, IDX.LEFT_SHOULDER, width, height);
-        const rightShoulder = getLandmarkXY(landmarks, IDX.RIGHT_SHOULDER, width, height);
-        shoulderMid = midpoint(leftShoulder, rightShoulder);
-
-        leftAnkle = getLandmarkXY(landmarks, IDX.LEFT_ANKLE, width, height);
-        rightAnkle = getLandmarkXY(landmarks, IDX.RIGHT_ANKLE, width, height);
-
-        bodyHeightPx = estimateBodyHeightPx(landmarks, width, height);
-
-        drawPoseSkeleton(overlayCtx, landmarks, width, height);
-      }
-
-      if (hipMid) {
-        trail.push({ x: hipMid.x, y: hipMid.y });
-      } else {
-        trail.push(null);
-      }
-
-      drawTrail(overlayCtx, trail, trailLength);
-
-      frames.push({
-        index: i,
-        timeSec: t,
-        landmarks,
-        hipXpx: hipMid ? hipMid.x : NaN,
-        hipYpx: hipMid ? hipMid.y : NaN,
-        shoulderXpx: shoulderMid ? shoulderMid.x : NaN,
-        shoulderYpx: shoulderMid ? shoulderMid.y : NaN,
-        leftAnkleXpx: leftAnkle ? leftAnkle.x : NaN,
-        leftAnkleYpx: leftAnkle ? leftAnkle.y : NaN,
-        rightAnkleXpx: rightAnkle ? rightAnkle.x : NaN,
-        rightAnkleYpx: rightAnkle ? rightAnkle.y : NaN,
-        bodyHeightPx
-      });
-
-      drawTextBlock(
-        overlayCtx,
-        [
-          `time: ${round(t, 2)} s`,
-          `frame: ${i + 1} / ${times.length}`
-        ],
-        18,
-        18
-      );
-
-      progressBar.value = (i + 1) / times.length;
-      setStatus(`解析中... ${i + 1} / ${times.length}`);
-    }
-
-    if (!frames.length || stopRequested) {
-      analyzeBtn.disabled = false;
-      stopBtn.disabled = true;
-      return;
-    }
-
-    // 補間
-    const cols = [
-      "hipXpx", "hipYpx",
-      "shoulderXpx", "shoulderYpx",
-      "leftAnkleXpx", "leftAnkleYpx",
-      "rightAnkleXpx", "rightAnkleYpx",
-      "bodyHeightPx"
-    ];
-
-    for (const col of cols) {
-      const series = frames.map((f) => f[col]);
-      const interp = interpolateSeries(series);
-      interp.forEach((v, idx) => {
-        frames[idx][col] = v;
-      });
-    }
-
-    const refBodyHeightPx = median(frames.map((f) => f.bodyHeightPx));
-    if (!isFiniteNumber(refBodyHeightPx) || refBodyHeightPx < 40) {
-      throw new Error("見かけ身長の推定に失敗しました。全身が映る、より横向きの動画を使ってください。");
-    }
-
-    const refPxPerCm = refBodyHeightPx / heightCm;
-
-    const firstValidFrame = frames.find(
-      (f) => isFiniteNumber(f.hipXpx) && isFiniteNumber(f.hipYpx)
-    );
-
-    if (!firstValidFrame) {
-      throw new Error("腰のランドマークが取得できませんでした。");
-    }
-
-    const originX = firstValidFrame.hipXpx;
-    const originY = firstValidFrame.hipYpx;
-
-    for (const f of frames) {
-      f.pxPerCm = f.bodyHeightPx / heightCm;
-      f.depthCorrection = clamp(refPxPerCm / f.pxPerCm, 0.8, 1.25);
-
-      const dxCmRaw = (f.hipXpx - originX) / f.pxPerCm;
-      const dyCmRaw = -(f.hipYpx - originY) / f.pxPerCm;
-
-      f.hipDxCmRaw = dxCmRaw;
-      f.hipDyCmRaw = dyCmRaw;
-
-      f.hipDxCmCorr = dxCmRaw * f.depthCorrection;
-      f.hipDyCmCorr = dyCmRaw * f.depthCorrection;
-
-      const ankleDxPx = Math.abs(f.leftAnkleXpx - f.rightAnkleXpx);
-      f.ankleDxCmCorr = (ankleDxPx / f.pxPerCm) * f.depthCorrection;
-    }
-
-    const smoothX = movingAverage(frames.map((f) => f.hipDxCmCorr), smoothWindow);
-    const smoothY = movingAverage(frames.map((f) => f.hipDyCmCorr), smoothWindow);
-
-    smoothX.forEach((v, i) => (frames[i].hipDxCmSmooth = v));
-    smoothY.forEach((v, i) => (frames[i].hipDyCmSmooth = v));
-
-    const vx = gradient(smoothX, dt);
-    const vy = gradient(smoothY, dt);
-
-    vx.forEach((v, i) => (frames[i].hipVxCmS = v));
-    vy.forEach((v, i) => (frames[i].hipVyCmS = v));
-    frames.forEach((f) => {
-      f.hipSpeedCmS = Math.sqrt(f.hipVxCmS ** 2 + f.hipVyCmS ** 2);
+  attachEvents() {
+    this.loadBtn.addEventListener("click", () => this.handleLoadOnly());
+    this.analyzeBtn.addEventListener("click", () => this.analyze());
+    this.stopBtn.addEventListener("click", () => {
+      this.stopRequested = true;
+      this.stopBtn.disabled = true;
     });
 
-    const stepFrame = frames.reduce((best, cur) =>
-      !best || cur.ankleDxCmCorr > best.ankleDxCmCorr ? cur : best, null);
+    this.downloadCsvBtn.addEventListener("click", () => this.downloadCsv());
+    this.downloadPngBtn.addEventListener("click", () => this.downloadPng());
+    this.exportVideoBtn.addEventListener("click", () => this.exportAnnotatedVideo());
 
-    const estimatedStepWidthCm = stepFrame?.ankleDxCmCorr ?? NaN;
-    const estimatedLegLengthCm = heightCm * 0.53;
-    const stepRatio = estimatedStepWidthCm / estimatedLegLengthCm;
+    this.duplicateBtn.addEventListener("click", () => duplicateWorkspace(this));
+    this.removeBtn.addEventListener("click", () => removeWorkspace(this));
+  }
 
-    const xVals = frames.map((f) => f.hipDxCmSmooth).filter(isFiniteNumber);
-    const yVals = frames.map((f) => f.hipDyCmSmooth).filter(isFiniteNumber);
-    const speedVals = frames.map((f) => f.hipSpeedCmS).filter(isFiniteNumber);
+  rename(index) {
+    this.index = index;
+    this.titleEl.textContent = `解析ページ ${index}`;
+  }
 
-    const metrics = {
-      stepWidthCm: estimatedStepWidthCm,
-      legLengthCm: estimatedLegLengthCm,
-      stepRatio,
-      hipXRangeCm: Math.max(...xVals) - Math.min(...xVals),
-      hipYRangeCm: Math.max(...yVals) - Math.min(...yVals),
-      maxHipSpeedCmS: Math.max(...speedVals),
-      stepFrameIndex: stepFrame?.index ?? -1,
-      stepTimeSec: stepFrame?.timeSec ?? NaN,
-      refBodyHeightPx
-    };
+  initCanvas() {
+    this.overlayCanvas.width = 960;
+    this.overlayCanvas.height = 540;
+    this.overlayCtx.fillStyle = "black";
+    this.overlayCtx.fillRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+    this.overlayCtx.fillStyle = "white";
+    this.overlayCtx.font = "24px sans-serif";
+    this.overlayCtx.fillText("動画を選択するとここにプレビューが表示されます", 40, 60);
 
-    latestResult = {
-      sourceName: file.name,
-      throwingHand,
-      heightCm,
-      analysisFps,
-      smoothWindow,
-      trailLength,
-      frames,
-      metrics,
-      video: {
-        width: overlayCanvas.width,
-        height: overlayCanvas.height,
-        duration: sourceVideo.duration
+    clearChart(this.trajCtx, this.trajectoryCanvas, "腰軌道 XY");
+    clearChart(this.tsCtx, this.timeseriesCanvas, "時系列");
+    this.setStatus("未初期化");
+    this.setExportStatus("未出力");
+  }
+
+  setStatus(text) {
+    this.statusText.textContent = text;
+  }
+
+  setExportStatus(text) {
+    this.exportStatus.textContent = text;
+  }
+
+  clearVideoUrl() {
+    if (this.videoObjectUrl) {
+      URL.revokeObjectURL(this.videoObjectUrl);
+      this.videoObjectUrl = null;
+    }
+  }
+
+  async loadVideoFile(file) {
+    if (!file) throw new Error("動画ファイルが選択されていません。");
+
+    this.clearVideoUrl();
+    this.currentVideoFile = file;
+
+    this.sourceVideo.pause();
+    this.sourceVideo.removeAttribute("src");
+    this.sourceVideo.load();
+
+    this.videoObjectUrl = URL.createObjectURL(file);
+    this.sourceVideo.src = this.videoObjectUrl;
+
+    await waitEvent(this.sourceVideo, "loadedmetadata");
+
+    this.overlayCanvas.width = this.sourceVideo.videoWidth;
+    this.overlayCanvas.height = this.sourceVideo.videoHeight;
+    drawVideoFrame(this.overlayCtx, this.sourceVideo, this.overlayCanvas);
+
+    this.setStatus(`動画読込完了: ${file.name} (${round(this.sourceVideo.duration, 2)}秒)`);
+  }
+
+  async handleLoadOnly() {
+    try {
+      const file = this.videoFileInput.files?.[0];
+      if (!file) {
+        alert("まず動画ファイルを選択してください。");
+        return;
       }
-    };
-
-    updateSummary(latestResult);
-    drawTrajectoryChart(latestResult);
-    drawTimeSeriesChart(latestResult);
-    await renderAnnotatedFrameAtIndex(0);
-
-    downloadCsvBtn.disabled = false;
-    downloadPngBtn.disabled = false;
-    exportVideoBtn.disabled = false;
-
-    setStatus("解析完了");
-  } catch (err) {
-    console.error(err);
-    alert(err.message || "解析に失敗しました。");
-    setStatus("解析失敗");
-  } finally {
-    analyzeBtn.disabled = false;
-    stopBtn.disabled = true;
-  }
-}
-
-/* =========================
-   結果描画
-========================= */
-function updateSummary(result) {
-  const m = result.metrics;
-  metricStepWidth.textContent = `${round(m.stepWidthCm, 1)} cm`;
-  metricHipXRange.textContent = `${round(m.hipXRangeCm, 1)} cm`;
-  metricHipYRange.textContent = `${round(m.hipYRangeCm, 1)} cm`;
-  metricHipSpeed.textContent = `${round(m.maxHipSpeedCmS, 1)} cm/s`;
-  metricLegLength.textContent = `${round(m.legLengthCm, 1)} cm`;
-  metricStepRatio.textContent = round(m.stepRatio, 3).toString();
-}
-
-async function renderAnnotatedFrameAtIndex(frameIndex) {
-  if (!latestResult) return;
-
-  const frame = latestResult.frames[clamp(frameIndex, 0, latestResult.frames.length - 1)];
-  const t = frame.timeSec;
-  sourceVideo.currentTime = t;
-  await waitEvent(sourceVideo, "seeked");
-
-  drawVideoFrame(overlayCtx, sourceVideo, overlayCanvas);
-
-  if (frame.landmarks) {
-    drawPoseSkeleton(overlayCtx, frame.landmarks, overlayCanvas.width, overlayCanvas.height);
+      this.setStatus("モデル初期化中...");
+      await ensurePoseLandmarker();
+      await this.loadVideoFile(file);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "動画の準備に失敗しました。");
+      this.setStatus("読込失敗");
+    }
   }
 
-  const trail = latestResult.frames
-    .slice(0, frameIndex + 1)
-    .map((f) =>
-      isFiniteNumber(f.hipXpx) && isFiniteNumber(f.hipYpx)
-        ? { x: f.hipXpx, y: f.hipYpx }
-        : null
-    );
+  buildCsv(result) {
+    const header = [
+      "frame",
+      "time_sec",
+      "hip_x_px",
+      "hip_y_px",
+      "body_height_px",
+      "px_per_cm",
+      "depth_correction",
+      "hip_dx_cm_raw",
+      "hip_dy_cm_raw",
+      "hip_dx_cm_corr",
+      "hip_dy_cm_corr",
+      "hip_dx_cm_smooth",
+      "hip_dy_cm_smooth",
+      "hip_vx_cm_s",
+      "hip_vy_cm_s",
+      "hip_speed_cm_s",
+      "left_ankle_x_px",
+      "right_ankle_x_px",
+      "ankle_dx_cm_corr"
+    ];
 
-  drawTrail(overlayCtx, trail, latestResult.trailLength);
+    const rows = result.frames.map((f) => [
+      f.index,
+      f.timeSec,
+      f.hipXpx,
+      f.hipYpx,
+      f.bodyHeightPx,
+      f.pxPerCm,
+      f.depthCorrection,
+      f.hipDxCmRaw,
+      f.hipDyCmRaw,
+      f.hipDxCmCorr,
+      f.hipDyCmCorr,
+      f.hipDxCmSmooth,
+      f.hipDyCmSmooth,
+      f.hipVxCmS,
+      f.hipVyCmS,
+      f.hipSpeedCmS,
+      f.leftAnkleXpx,
+      f.rightAnkleXpx,
+      f.ankleDxCmCorr
+    ]);
 
-  const lines = [
-    `time: ${round(frame.timeSec, 2)} s`,
-    `hip x: ${round(frame.hipDxCmSmooth, 1)} cm`,
-    `hip y: ${round(frame.hipDyCmSmooth, 1)} cm`,
-    `hip speed: ${round(frame.hipSpeedCmS, 1)} cm/s`,
-    `depth corr: ${round(frame.depthCorrection, 3)}`
-  ];
-
-  if (frame.index === latestResult.metrics.stepFrameIndex) {
-    lines.push("max step width");
+    return [header, ...rows]
+      .map((row) => row.map((v) => (v == null ? "" : `${v}`)).join(","))
+      .join("\n");
   }
 
-  drawTextBlock(overlayCtx, lines, 18, 18);
-}
-
-/* =========================
-   CSV / PNG / Video
-========================= */
-function buildCsv(result) {
-  const header = [
-    "frame",
-    "time_sec",
-    "hip_x_px",
-    "hip_y_px",
-    "body_height_px",
-    "px_per_cm",
-    "depth_correction",
-    "hip_dx_cm_raw",
-    "hip_dy_cm_raw",
-    "hip_dx_cm_corr",
-    "hip_dy_cm_corr",
-    "hip_dx_cm_smooth",
-    "hip_dy_cm_smooth",
-    "hip_vx_cm_s",
-    "hip_vy_cm_s",
-    "hip_speed_cm_s",
-    "left_ankle_x_px",
-    "right_ankle_x_px",
-    "ankle_dx_cm_corr"
-  ];
-
-  const rows = result.frames.map((f) => [
-    f.index,
-    f.timeSec,
-    f.hipXpx,
-    f.hipYpx,
-    f.bodyHeightPx,
-    f.pxPerCm,
-    f.depthCorrection,
-    f.hipDxCmRaw,
-    f.hipDyCmRaw,
-    f.hipDxCmCorr,
-    f.hipDyCmCorr,
-    f.hipDxCmSmooth,
-    f.hipDyCmSmooth,
-    f.hipVxCmS,
-    f.hipVyCmS,
-    f.hipSpeedCmS,
-    f.leftAnkleXpx,
-    f.rightAnkleXpx,
-    f.ankleDxCmCorr
-  ]);
-
-  return [header, ...rows]
-    .map((row) =>
-      row
-        .map((v) => (v === null || v === undefined ? "" : `${v}`))
-        .join(",")
-    )
-    .join("\n");
-}
-
-async function exportAnnotatedVideo(result) {
-  setExportStatus("注釈付き動画を書き出し中...");
-
-  const stream = overlayCanvas.captureStream(result.analysisFps);
-  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-    ? "video/webm;codecs=vp9"
-    : "video/webm";
-
-  const recorder = new MediaRecorder(stream, { mimeType });
-  const chunks = [];
-
-  recorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) chunks.push(e.data);
-  };
-
-  const done = new Promise((resolve) => {
-    recorder.onstop = resolve;
-  });
-
-  recorder.start();
-
-  for (let i = 0; i < result.frames.length; i++) {
-    await renderAnnotatedFrameAtIndex(i);
-    await new Promise((r) => setTimeout(r, 1000 / result.analysisFps));
-    setExportStatus(`注釈付き動画を書き出し中... ${i + 1}/${result.frames.length}`);
+  updateSummary(result) {
+    const m = result.metrics;
+    this.metricStepWidth.textContent = `${round(m.stepWidthCm, 1)} cm`;
+    this.metricHipXRange.textContent = `${round(m.hipXRangeCm, 1)} cm`;
+    this.metricHipYRange.textContent = `${round(m.hipYRangeCm, 1)} cm`;
+    this.metricHipSpeed.textContent = `${round(m.maxHipSpeedCmS, 1)} cm/s`;
+    this.metricLegLength.textContent = `${round(m.legLengthCm, 1)} cm`;
+    this.metricStepRatio.textContent = round(m.stepRatio, 3).toString();
   }
 
-  recorder.stop();
-  await done;
+  async renderAnnotatedFrameAtIndex(frameIndex) {
+    if (!this.latestResult) return;
 
-  const blob = new Blob(chunks, { type: mimeType });
-  downloadBlob(blob, `${filenameBase(result.sourceName)}_hip_track.webm`);
-  setExportStatus("注釈付き動画を書き出しました");
-}
+    const frame = this.latestResult.frames[clamp(frameIndex, 0, this.latestResult.frames.length - 1)];
+    const t = frame.timeSec;
 
-/* =========================
-   ボタン
-========================= */
-loadDemoBtn.addEventListener("click", async () => {
-  try {
-    const file = videoFileInput.files?.[0];
+    this.sourceVideo.currentTime = t;
+    await waitEvent(this.sourceVideo, "seeked");
+
+    drawVideoFrame(this.overlayCtx, this.sourceVideo, this.overlayCanvas);
+
+    if (frame.landmarks) {
+      drawPoseSkeleton(this.overlayCtx, frame.landmarks, this.overlayCanvas.width, this.overlayCanvas.height);
+    }
+
+    const trail = this.latestResult.frames
+      .slice(0, frameIndex + 1)
+      .map((f) =>
+        isFiniteNumber(f.hipXpx) && isFiniteNumber(f.hipYpx)
+          ? { x: f.hipXpx, y: f.hipYpx }
+          : null
+      );
+
+    drawTrail(this.overlayCtx, trail, this.latestResult.trailLength);
+
+    const lines = [
+      `time: ${round(frame.timeSec, 2)} s`,
+      `hip x: ${round(frame.hipDxCmSmooth, 1)} cm`,
+      `hip y: ${round(frame.hipDyCmSmooth, 1)} cm`,
+      `hip speed: ${round(frame.hipSpeedCmS, 1)} cm/s`,
+      `depth corr: ${round(frame.depthCorrection, 3)}`
+    ];
+
+    if (frame.index === this.latestResult.metrics.stepFrameIndex) {
+      lines.push("max step width");
+    }
+
+    drawTextBlock(this.overlayCtx, lines, 18, 18);
+  }
+
+  async analyze() {
+    const file = this.videoFileInput.files?.[0];
+    const heightCm = parseFloat(this.heightCmInput.value);
+    const throwingHand = this.throwingHandSelect.value;
+    const analysisFps = parseFloat(this.analysisFpsInput.value);
+    const smoothWindow = parseInt(this.smoothWindowInput.value, 10);
+    const trailLength = parseInt(this.trailLengthInput.value, 10);
+
     if (!file) {
-      alert("まず動画ファイルを選択してください。");
+      alert("動画ファイルを選択してください。");
       return;
     }
-    await ensurePoseLandmarker();
-    await loadVideoFile(file);
-  } catch (err) {
-    console.error(err);
-    alert(err.message || "動画の準備に失敗しました。");
+    if (!isFiniteNumber(heightCm) || heightCm <= 0) {
+      alert("身長を正しく入力してください。");
+      return;
+    }
+    if (!isFiniteNumber(analysisFps) || analysisFps <= 0) {
+      alert("解析FPSを正しく入力してください。");
+      return;
+    }
+
+    this.stopRequested = false;
+    this.latestResult = null;
+    this.progressBar.value = 0;
+    this.analyzeBtn.disabled = true;
+    this.stopBtn.disabled = false;
+    this.downloadCsvBtn.disabled = true;
+    this.downloadPngBtn.disabled = true;
+    this.exportVideoBtn.disabled = true;
+    this.setExportStatus("未出力");
+
+    try {
+      this.setStatus("モデル初期化中...");
+      await ensurePoseLandmarker();
+      await this.loadVideoFile(file);
+
+      const duration = this.sourceVideo.duration;
+      const dt = 1 / analysisFps;
+      const times = [];
+      for (let t = 0; t <= duration; t += dt) {
+        times.push(Math.min(t, duration));
+      }
+
+      const frames = [];
+      const trail = [];
+
+      this.setStatus("解析中...");
+
+      for (let i = 0; i < times.length; i++) {
+        if (this.stopRequested) {
+          this.setStatus("停止しました");
+          break;
+        }
+
+        const t = times[i];
+        this.sourceVideo.currentTime = t;
+        await waitEvent(this.sourceVideo, "seeked");
+
+        const result = poseLandmarker.detectForVideo(this.sourceVideo, Math.round(t * 1000));
+        drawVideoFrame(this.overlayCtx, this.sourceVideo, this.overlayCanvas);
+
+        let landmarks = null;
+        if (result.landmarks && result.landmarks.length > 0) {
+          landmarks = result.landmarks[0];
+        }
+
+        const width = this.overlayCanvas.width;
+        const height = this.overlayCanvas.height;
+
+        let hipMid = null;
+        let shoulderMid = null;
+        let leftAnkle = null;
+        let rightAnkle = null;
+        let bodyHeightPx = NaN;
+
+        if (landmarks) {
+          const leftHip = getLandmarkXY(landmarks, IDX.LEFT_HIP, width, height);
+          const rightHip = getLandmarkXY(landmarks, IDX.RIGHT_HIP, width, height);
+          hipMid = midpoint(leftHip, rightHip);
+
+          const leftShoulder = getLandmarkXY(landmarks, IDX.LEFT_SHOULDER, width, height);
+          const rightShoulder = getLandmarkXY(landmarks, IDX.RIGHT_SHOULDER, width, height);
+          shoulderMid = midpoint(leftShoulder, rightShoulder);
+
+          leftAnkle = getLandmarkXY(landmarks, IDX.LEFT_ANKLE, width, height);
+          rightAnkle = getLandmarkXY(landmarks, IDX.RIGHT_ANKLE, width, height);
+
+          bodyHeightPx = estimateBodyHeightPx(landmarks, width, height);
+          drawPoseSkeleton(this.overlayCtx, landmarks, width, height);
+        }
+
+        if (hipMid) trail.push({ x: hipMid.x, y: hipMid.y });
+        else trail.push(null);
+
+        drawTrail(this.overlayCtx, trail, trailLength);
+
+        frames.push({
+          index: i,
+          timeSec: t,
+          landmarks,
+          hipXpx: hipMid ? hipMid.x : NaN,
+          hipYpx: hipMid ? hipMid.y : NaN,
+          shoulderXpx: shoulderMid ? shoulderMid.x : NaN,
+          shoulderYpx: shoulderMid ? shoulderMid.y : NaN,
+          leftAnkleXpx: leftAnkle ? leftAnkle.x : NaN,
+          leftAnkleYpx: leftAnkle ? leftAnkle.y : NaN,
+          rightAnkleXpx: rightAnkle ? rightAnkle.x : NaN,
+          rightAnkleYpx: rightAnkle ? rightAnkle.y : NaN,
+          bodyHeightPx
+        });
+
+        drawTextBlock(
+          this.overlayCtx,
+          [
+            `time: ${round(t, 2)} s`,
+            `frame: ${i + 1} / ${times.length}`
+          ],
+          18,
+          18
+        );
+
+        this.progressBar.value = (i + 1) / times.length;
+        this.setStatus(`解析中... ${i + 1} / ${times.length}`);
+      }
+
+      if (!frames.length || this.stopRequested) {
+        return;
+      }
+
+      const cols = [
+        "hipXpx", "hipYpx",
+        "shoulderXpx", "shoulderYpx",
+        "leftAnkleXpx", "leftAnkleYpx",
+        "rightAnkleXpx", "rightAnkleYpx",
+        "bodyHeightPx"
+      ];
+
+      for (const col of cols) {
+        const series = frames.map((f) => f[col]);
+        const interp = interpolateSeries(series);
+        interp.forEach((v, idx) => {
+          frames[idx][col] = v;
+        });
+      }
+
+      const refBodyHeightPx = median(frames.map((f) => f.bodyHeightPx));
+      if (!isFiniteNumber(refBodyHeightPx) || refBodyHeightPx < 40) {
+        throw new Error("見かけ身長の推定に失敗しました。全身が映る、より横向きの動画を使ってください。");
+      }
+
+      const refPxPerCm = refBodyHeightPx / heightCm;
+      const firstValidFrame = frames.find(
+        (f) => isFiniteNumber(f.hipXpx) && isFiniteNumber(f.hipYpx)
+      );
+
+      if (!firstValidFrame) {
+        throw new Error("腰のランドマークが取得できませんでした。");
+      }
+
+      const originX = firstValidFrame.hipXpx;
+      const originY = firstValidFrame.hipYpx;
+
+      for (const f of frames) {
+        f.pxPerCm = f.bodyHeightPx / heightCm;
+        f.depthCorrection = clamp(refPxPerCm / f.pxPerCm, 0.8, 1.25);
+
+        const dxCmRaw = (f.hipXpx - originX) / f.pxPerCm;
+        const dyCmRaw = -(f.hipYpx - originY) / f.pxPerCm;
+
+        f.hipDxCmRaw = dxCmRaw;
+        f.hipDyCmRaw = dyCmRaw;
+        f.hipDxCmCorr = dxCmRaw * f.depthCorrection;
+        f.hipDyCmCorr = dyCmRaw * f.depthCorrection;
+
+        const ankleDxPx = Math.abs(f.leftAnkleXpx - f.rightAnkleXpx);
+        f.ankleDxCmCorr = (ankleDxPx / f.pxPerCm) * f.depthCorrection;
+      }
+
+      const smoothX = movingAverage(frames.map((f) => f.hipDxCmCorr), smoothWindow);
+      const smoothY = movingAverage(frames.map((f) => f.hipDyCmCorr), smoothWindow);
+
+      smoothX.forEach((v, i) => (frames[i].hipDxCmSmooth = v));
+      smoothY.forEach((v, i) => (frames[i].hipDyCmSmooth = v));
+
+      const vx = gradient(smoothX, dt);
+      const vy = gradient(smoothY, dt);
+
+      vx.forEach((v, i) => (frames[i].hipVxCmS = v));
+      vy.forEach((v, i) => (frames[i].hipVyCmS = v));
+      frames.forEach((f) => {
+        f.hipSpeedCmS = Math.sqrt(f.hipVxCmS ** 2 + f.hipVyCmS ** 2);
+      });
+
+      const stepFrame = frames.reduce((best, cur) =>
+        !best || cur.ankleDxCmCorr > best.ankleDxCmCorr ? cur : best, null);
+
+      const estimatedStepWidthCm = stepFrame?.ankleDxCmCorr ?? NaN;
+      const estimatedLegLengthCm = heightCm * 0.53;
+      const stepRatio = estimatedStepWidthCm / estimatedLegLengthCm;
+
+      const xVals = frames.map((f) => f.hipDxCmSmooth).filter(isFiniteNumber);
+      const yVals = frames.map((f) => f.hipDyCmSmooth).filter(isFiniteNumber);
+      const speedVals = frames.map((f) => f.hipSpeedCmS).filter(isFiniteNumber);
+
+      const metrics = {
+        stepWidthCm: estimatedStepWidthCm,
+        legLengthCm: estimatedLegLengthCm,
+        stepRatio,
+        hipXRangeCm: Math.max(...xVals) - Math.min(...xVals),
+        hipYRangeCm: Math.max(...yVals) - Math.min(...yVals),
+        maxHipSpeedCmS: Math.max(...speedVals),
+        stepFrameIndex: stepFrame?.index ?? -1,
+        stepTimeSec: stepFrame?.timeSec ?? NaN,
+        refBodyHeightPx
+      };
+
+      this.latestResult = {
+        sourceName: file.name,
+        throwingHand,
+        heightCm,
+        analysisFps,
+        smoothWindow,
+        trailLength,
+        frames,
+        metrics,
+        video: {
+          width: this.overlayCanvas.width,
+          height: this.overlayCanvas.height,
+          duration: this.sourceVideo.duration
+        }
+      };
+
+      this.updateSummary(this.latestResult);
+      drawTrajectoryChart(this.trajCtx, this.trajectoryCanvas, this.latestResult);
+      drawTimeSeriesChart(this.tsCtx, this.timeseriesCanvas, this.latestResult);
+      await this.renderAnnotatedFrameAtIndex(0);
+
+      this.downloadCsvBtn.disabled = false;
+      this.downloadPngBtn.disabled = false;
+      this.exportVideoBtn.disabled = false;
+
+      this.setStatus("解析完了");
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "解析に失敗しました。");
+      this.setStatus("解析失敗");
+    } finally {
+      this.analyzeBtn.disabled = false;
+      this.stopBtn.disabled = true;
+    }
   }
-});
 
-analyzeBtn.addEventListener("click", analyzeCurrentVideo);
-
-stopBtn.addEventListener("click", () => {
-  stopRequested = true;
-  stopBtn.disabled = true;
-});
-
-downloadCsvBtn.addEventListener("click", () => {
-  if (!latestResult) return;
-  const csv = buildCsv(latestResult);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  downloadBlob(blob, `${filenameBase(latestResult.sourceName)}_hip_track.csv`);
-});
-
-downloadPngBtn.addEventListener("click", () => {
-  trajectoryCanvas.toBlob((blob) => {
-    if (!blob || !latestResult) return;
-    downloadBlob(blob, `${filenameBase(latestResult.sourceName)}_trajectory.png`);
-  });
-});
-
-exportVideoBtn.addEventListener("click", async () => {
-  if (!latestResult) return;
-  try {
-    exportVideoBtn.disabled = true;
-    await exportAnnotatedVideo(latestResult);
-  } catch (err) {
-    console.error(err);
-    alert(err.message || "動画書き出しに失敗しました。");
-    setExportStatus("動画書き出し失敗");
-  } finally {
-    exportVideoBtn.disabled = false;
+  downloadCsv() {
+    if (!this.latestResult) return;
+    const csv = this.buildCsv(this.latestResult);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    downloadBlob(blob, `${filenameBase(this.latestResult.sourceName)}_hip_track.csv`);
   }
+
+  downloadPng() {
+    this.trajectoryCanvas.toBlob((blob) => {
+      if (!blob || !this.latestResult) return;
+      downloadBlob(blob, `${filenameBase(this.latestResult.sourceName)}_trajectory.png`);
+    });
+  }
+
+  async exportAnnotatedVideo() {
+    if (!this.latestResult) return;
+
+    try {
+      this.exportVideoBtn.disabled = true;
+      this.setExportStatus("注釈付き動画を書き出し中...");
+
+      const stream = this.overlayCanvas.captureStream(this.latestResult.analysisFps);
+      const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+        ? "video/webm;codecs=vp9"
+        : "video/webm";
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      const chunks = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+
+      const done = new Promise((resolve) => {
+        recorder.onstop = resolve;
+      });
+
+      recorder.start();
+
+      for (let i = 0; i < this.latestResult.frames.length; i++) {
+        await this.renderAnnotatedFrameAtIndex(i);
+        await new Promise((r) => setTimeout(r, 1000 / this.latestResult.analysisFps));
+        this.setExportStatus(`注釈付き動画を書き出し中... ${i + 1}/${this.latestResult.frames.length}`);
+      }
+
+      recorder.stop();
+      await done;
+
+      const blob = new Blob(chunks, { type: mimeType });
+      downloadBlob(blob, `${filenameBase(this.latestResult.sourceName)}_hip_track.webm`);
+      this.setExportStatus("注釈付き動画を書き出しました");
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "動画書き出しに失敗しました。");
+      this.setExportStatus("動画書き出し失敗");
+    } finally {
+      this.exportVideoBtn.disabled = false;
+    }
+  }
+
+  applyConfigFrom(other) {
+    this.heightCmInput.value = other.heightCmInput.value;
+    this.throwingHandSelect.value = other.throwingHandSelect.value;
+    this.analysisFpsInput.value = other.analysisFpsInput.value;
+    this.smoothWindowInput.value = other.smoothWindowInput.value;
+    this.trailLengthInput.value = other.trailLengthInput.value;
+  }
+
+  destroy() {
+    this.clearVideoUrl();
+    this.sourceVideo.pause();
+    this.sourceVideo.removeAttribute("src");
+    this.sourceVideo.load();
+  }
+}
+
+/* =========================
+   Workspace management
+========================= */
+const workspaceContainer = document.getElementById("workspaceContainer");
+const workspaceTemplate = document.getElementById("workspaceTemplate");
+const addWorkspaceBtn = document.getElementById("addWorkspaceBtn");
+
+const workspaceList = [];
+
+function refreshWorkspaceTitles() {
+  workspaceList.forEach((ws, idx) => ws.rename(idx + 1));
+}
+
+function createWorkspace(copyFrom = null) {
+  const node = workspaceTemplate.content.firstElementChild.cloneNode(true);
+  workspaceContainer.appendChild(node);
+
+  const ws = new AnalysisWorkspace(node, workspaceList.length + 1);
+
+  if (copyFrom) {
+    ws.applyConfigFrom(copyFrom);
+  }
+
+  workspaceList.push(ws);
+  refreshWorkspaceTitles();
+  return ws;
+}
+
+function duplicateWorkspace(sourceWorkspace) {
+  const ws = createWorkspace(sourceWorkspace);
+  ws.root.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function removeWorkspace(workspace) {
+  if (workspaceList.length === 1) {
+    alert("解析ページは最低1つ残してください。");
+    return;
+  }
+
+  const idx = workspaceList.indexOf(workspace);
+  if (idx === -1) return;
+
+  workspace.destroy();
+  workspace.root.remove();
+  workspaceList.splice(idx, 1);
+  refreshWorkspaceTitles();
+}
+
+addWorkspaceBtn.addEventListener("click", () => {
+  const ws = createWorkspace();
+  ws.root.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 /* =========================
-   初期表示
+   Initial
 ========================= */
-overlayCanvas.width = 960;
-overlayCanvas.height = 540;
-overlayCtx.fillStyle = "black";
-overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-overlayCtx.fillStyle = "white";
-overlayCtx.font = "24px sans-serif";
-overlayCtx.fillText("動画を選択するとここにプレビューが表示されます", 40, 60);
-
-clearChart(trajCtx, trajectoryCanvas, "腰軌道 XY");
-clearChart(tsCtx, timeseriesCanvas, "時系列");
-setStatus("未初期化");
-setExportStatus("未出力");
+createWorkspace();
