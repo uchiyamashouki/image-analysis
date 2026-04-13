@@ -410,20 +410,26 @@ function drawTrajectoryChart(ctx, canvas, result) {
 
   ctx.strokeStyle = "#d1d5db";
   ctx.lineWidth = 1;
+  ctx.fillStyle = "#111827";
+  ctx.font = "14px sans-serif";
 
   for (let i = 0; i <= 5; i++) {
     const yy = padT + (h / 5) * i;
+    const yVal = y1 - ((y1 - y0) * i) / 5;
     ctx.beginPath();
     ctx.moveTo(padL, yy);
     ctx.lineTo(padL + w, yy);
     ctx.stroke();
+    ctx.fillText(`${round(yVal, 1)} cm`, 10, yy + 4);
   }
   for (let i = 0; i <= 5; i++) {
     const xx = padL + (w / 5) * i;
+    const xVal = x0 + ((x1 - x0) * i) / 5;
     ctx.beginPath();
     ctx.moveTo(xx, padT);
     ctx.lineTo(xx, padT + h);
     ctx.stroke();
+    ctx.fillText(`${round(xVal, 1)} cm`, xx - 24, padT + h + 24);
   }
 
   ctx.strokeStyle = "#2563eb";
@@ -598,6 +604,8 @@ class AnalysisWorkspace {
     this.metricHipSpeed = this.root.querySelector(".metricHipSpeed");
     this.metricLegLength = this.root.querySelector(".metricLegLength");
     this.metricStepRatio = this.root.querySelector(".metricStepRatio");
+    this.metricHipXRangePct = this.root.querySelector(".metricHipXRangePct");
+    this.metricHipYRangePct = this.root.querySelector(".metricHipYRangePct");
 
     this.downloadCsvBtn = this.root.querySelector(".downloadCsvBtn");
     this.downloadPngBtn = this.root.querySelector(".downloadPngBtn");
@@ -754,6 +762,12 @@ class AnalysisWorkspace {
     this.metricHipSpeed.textContent = `${round(m.maxHipSpeedCmS, 1)} cm/s`;
     this.metricLegLength.textContent = `${round(m.legLengthCm, 1)} cm`;
     this.metricStepRatio.textContent = round(m.stepRatio, 3).toString();
+    this.metricHipXRangePct.textContent = isFiniteNumber(m.hipXRangePctLeg)
+      ? `${round(m.hipXRangePctLeg, 1)} %`
+      : "-";
+    this.metricHipYRangePct.textContent = isFiniteNumber(m.hipYRangePctLeg)
+      ? `${round(m.hipYRangePctLeg, 1)} %`
+      : "-";
   }
 
   async renderAnnotatedFrameAtIndex(frameIndex) {
@@ -1013,6 +1027,8 @@ class AnalysisWorkspace {
         stepRatio,
         hipXRangeCm: safeRange(xVals),
         hipYRangeCm: safeRange(yVals),
+        hipXRangePctLeg: (safeRange(xVals) / estimatedLegLengthCm) * 100,
+        hipYRangePctLeg: (safeRange(yVals) / estimatedLegLengthCm) * 100,
         maxHipSpeedCmS: safeMax(speedVals),
         stepFrameIndex: stepFrame?.index ?? -1,
         stepTimeSec: stepFrame?.timeSec ?? NaN,
