@@ -7,6 +7,8 @@ import {
    MediaPipe
 ========================= */
 let poseLandmarker = null;
+let activeWorkspaceAnalysisId = null;
+let workspaceUidCounter = 0;
 
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
@@ -561,6 +563,7 @@ class AnalysisWorkspace {
     this.currentVideoFile = null;
     this.latestResult = null;
     this.videoObjectUrl = null;
+    this.uid = ++workspaceUidCounter;
 
     this.bindDom();
     this.attachEvents();
@@ -756,18 +759,22 @@ class AnalysisWorkspace {
 
   updateSummary(result) {
     const m = result.metrics;
-    this.metricStepWidth.textContent = `${round(m.stepWidthCm, 1)} cm`;
-    this.metricHipXRange.textContent = `${round(m.hipXRangeCm, 1)} cm`;
-    this.metricHipYRange.textContent = `${round(m.hipYRangeCm, 1)} cm`;
-    this.metricHipSpeed.textContent = `${round(m.maxHipSpeedCmS, 1)} cm/s`;
-    this.metricLegLength.textContent = `${round(m.legLengthCm, 1)} cm`;
-    this.metricStepRatio.textContent = round(m.stepRatio, 3).toString();
-    this.metricHipXRangePct.textContent = isFiniteNumber(m.hipXRangePctLeg)
+    const setText = (el, text) => {
+      if (el) el.textContent = text;
+    };
+
+    setText(this.metricStepWidth, `${round(m.stepWidthCm, 1)} cm`);
+    setText(this.metricHipXRange, `${round(m.hipXRangeCm, 1)} cm`);
+    setText(this.metricHipYRange, `${round(m.hipYRangeCm, 1)} cm`);
+    setText(this.metricHipSpeed, `${round(m.maxHipSpeedCmS, 1)} cm/s`);
+    setText(this.metricLegLength, `${round(m.legLengthCm, 1)} cm`);
+    setText(this.metricStepRatio, round(m.stepRatio, 3).toString());
+    setText(this.metricHipXRangePct, isFiniteNumber(m.hipXRangePctLeg)
       ? `${round(m.hipXRangePctLeg, 1)} %`
-      : "-";
-    this.metricHipYRangePct.textContent = isFiniteNumber(m.hipYRangePctLeg)
+      : "-");
+    setText(this.metricHipYRangePct, isFiniteNumber(m.hipYRangePctLeg)
       ? `${round(m.hipYRangePctLeg, 1)} %`
-      : "-";
+      : "-");
   }
 
   async renderAnnotatedFrameAtIndex(frameIndex) {
@@ -811,6 +818,11 @@ class AnalysisWorkspace {
   }
 
   async analyze() {
+    if (activeWorkspaceAnalysisId != null && activeWorkspaceAnalysisId !== this.uid) {
+      alert("別の解析ページで解析中です。完了または停止してから実行してください。");
+      return;
+    }
+
     const file = this.videoFileInput.files?.[0];
     const heightCm = parseFloat(this.heightCmInput.value);
     const throwingHand = this.throwingHandSelect.value;
@@ -832,6 +844,7 @@ class AnalysisWorkspace {
     }
 
     this.stopRequested = false;
+    activeWorkspaceAnalysisId = this.uid;
     this.latestResult = null;
     this.interpolationStats = { total: 0, filled: 0 };
     this.progressBar.value = 0;
@@ -1068,6 +1081,7 @@ class AnalysisWorkspace {
       alert(err.message || "解析に失敗しました。");
       this.setStatus("解析失敗");
     } finally {
+      activeWorkspaceAnalysisId = null;
       this.analyzeBtn.disabled = false;
       this.stopBtn.disabled = true;
     }
