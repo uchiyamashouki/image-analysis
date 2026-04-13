@@ -57,13 +57,67 @@ body {
   color: var(--muted);
 }
 
+.top-actions {
+  margin-top: 18px;
+}
+
 .panel {
   padding: 20px;
 }
 
-.panel h2 {
+.panel h2,
+.subpanel h3 {
   margin: 0 0 16px;
-  font-size: 22px;
+}
+
+.info-panel ul {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.workspace-container {
+  display: grid;
+  gap: 24px;
+}
+
+.workspace {
+  padding: 20px;
+  display: grid;
+  gap: 18px;
+}
+
+.workspace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(71, 85, 105, 0.45);
+}
+
+.workspace-title {
+  margin: 0;
+  font-size: 26px;
+}
+
+.workspace-subtitle {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.workspace-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.subpanel {
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(71, 85, 105, 0.45);
+  border-radius: 16px;
+  padding: 16px;
 }
 
 .grid {
@@ -153,21 +207,10 @@ progress {
   height: 16px;
 }
 
-#statusText,
-.export-status {
+.statusText,
+.exportStatus {
   color: var(--muted);
   line-height: 1.6;
-}
-
-.tips {
-  margin-top: 16px;
-  color: var(--muted);
-}
-
-.tips summary {
-  cursor: pointer;
-  color: var(--text);
-  margin-bottom: 8px;
 }
 
 .canvas-wrap {
@@ -179,7 +222,7 @@ progress {
   padding: 10px;
 }
 
-#overlayCanvas {
+.overlayCanvas {
   display: block;
   width: 100%;
   max-width: 100%;
@@ -229,7 +272,7 @@ progress {
   padding: 14px;
 }
 
-.chart-box h3 {
+.chart-box h4 {
   margin: 0 0 12px;
   font-size: 18px;
 }
@@ -256,8 +299,13 @@ progress {
   }
 
   .panel,
-  .hero {
+  .hero,
+  .workspace {
     padding: 16px;
+  }
+
+  .workspace-header {
+    flex-direction: column;
   }
 
   .grid,
