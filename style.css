@@ -11,6 +11,7 @@
   --card: #0b1220;
   --shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
   --radius: 18px;
+  --focus: #fbbf24;
 }
 
 * {
@@ -77,6 +78,10 @@ body {
   line-height: 1.8;
 }
 
+.info-panel li + li {
+  margin-top: 4px;
+}
+
 .workspace-container {
   display: grid;
   gap: 24px;
@@ -105,6 +110,12 @@ body {
 .workspace-subtitle {
   margin: 8px 0 0;
   color: var(--muted);
+}
+
+.controls .workspace-subtitle {
+  margin: 14px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .workspace-actions {
@@ -151,6 +162,13 @@ select {
   border: 1px solid #475569;
   background: #0b1220;
   color: var(--text);
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .actions {
@@ -211,6 +229,7 @@ progress {
 .exportStatus {
   color: var(--muted);
   line-height: 1.6;
+  font-size: 14px;
 }
 
 .canvas-wrap {
@@ -257,6 +276,16 @@ progress {
 .note {
   margin-top: 14px;
   color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .chart-grid {
