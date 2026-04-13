@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>投球・腰軌道トラッカー</title>
+  <title>投球・腰軌道トラッカー（改良版UI）</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -12,11 +12,11 @@
       <h1>投球・腰軌道トラッカー</h1>
       <p>
         単一カメラの投球動画から、腰の移動軌道・簡易奥行き補正・ステップ幅概算を行います。
-        解析パネルを複製して、複数動画を並行して比較できます。
+        解析パネルを複製して、複数動画を並行して比較できます。比較用途向けの簡易解析です。
       </p>
 
       <div class="top-actions">
-        <button id="addWorkspaceBtn" class="primary" type="button">解析ページを追加</button>
+        <button id="addWorkspaceBtn" class="primary" type="button" aria-label="解析ページを追加">解析ページを追加</button>
       </div>
     </header>
 
@@ -27,6 +27,15 @@
         <li>各パネルは独立しているので、別動画を個別に解析できます。</li>
         <li>なるべく真横に近く、全身が映る動画が向いています。</li>
         <li>比較用途向けの簡易解析です。厳密な3次元計測ではありません。</li>
+      </ul>
+    </section>
+
+    <section class="panel info-panel">
+      <h2>解析精度の目安</h2>
+      <ul>
+        <li>全身がフレーム内に収まり、被写体のブレが少ない動画ほど安定します。</li>
+        <li>逆光・暗所・被写体の遮蔽がある場合はランドマーク欠損が増えることがあります。</li>
+        <li>同一条件（カメラ高さ・画角・フレームレート）での比較を推奨します。</li>
       </ul>
     </section>
 
@@ -41,8 +50,8 @@
           <p class="workspace-subtitle">動画ごとに独立して解析できます</p>
         </div>
         <div class="workspace-actions">
-          <button class="duplicateWorkspaceBtn secondary" type="button">複製</button>
-          <button class="removeWorkspaceBtn danger" type="button">削除</button>
+          <button class="duplicateWorkspaceBtn secondary" type="button" aria-label="解析ページを複製">複製</button>
+          <button class="removeWorkspaceBtn danger" type="button" aria-label="解析ページを削除">削除</button>
         </div>
       </div>
 
@@ -84,15 +93,19 @@
           </label>
         </div>
 
+        <p class="workspace-subtitle">
+          推奨設定: 解析FPS 20前後 / 平滑化窓 5〜9 / 横向きに近い撮影。
+        </p>
+
         <div class="actions">
-          <button class="loadBtn secondary" type="button">入力だけ確認</button>
-          <button class="analyzeBtn primary" type="button">解析開始</button>
-          <button class="stopBtn danger" type="button" disabled>停止</button>
+          <button class="loadBtn secondary" type="button" aria-label="入力だけ確認">入力だけ確認</button>
+          <button class="analyzeBtn primary" type="button" aria-label="解析開始">解析開始</button>
+          <button class="stopBtn danger" type="button" aria-label="解析停止" disabled>停止</button>
         </div>
 
         <div class="progress-wrap">
           <progress class="progressBar" value="0" max="1"></progress>
-          <div class="statusText">未初期化</div>
+          <div class="statusText" role="status" aria-live="polite">未初期化</div>
         </div>
       </section>
 
@@ -155,11 +168,11 @@
       <section class="subpanel exports">
         <h3>出力</h3>
         <div class="actions">
-          <button class="downloadCsvBtn" type="button" disabled>CSVダウンロード</button>
-          <button class="downloadPngBtn" type="button" disabled>軌道PNGダウンロード</button>
-          <button class="exportVideoBtn" type="button" disabled>注釈付き動画を書き出し</button>
+          <button class="downloadCsvBtn" type="button" aria-label="CSVをダウンロード" disabled>CSVダウンロード</button>
+          <button class="downloadPngBtn" type="button" aria-label="軌道PNGをダウンロード" disabled>軌道PNGダウンロード</button>
+          <button class="exportVideoBtn" type="button" aria-label="注釈付き動画を書き出し" disabled>注釈付き動画を書き出し</button>
         </div>
-        <div class="exportStatus">未出力</div>
+        <div class="exportStatus" role="status" aria-live="polite">未出力</div>
       </section>
     </section>
   </template>
