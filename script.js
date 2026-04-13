@@ -378,8 +378,8 @@ function drawTrajectoryChart(ctx, canvas, result) {
   clearChart(ctx, canvas, "腰軌道 XY");
   if (!result || !result.frames.length) return;
 
-  const x = result.frames.map((f) => f.hipDxCmSmooth);
-  const y = result.frames.map((f) => f.hipDyCmSmooth);
+  const x = result.frames.map((f) => f.hipForwardCmSmooth);
+  const y = result.frames.map((f) => f.hipSideCmSmooth);
 
   const valid = x
     .map((vx, i) => ({ x: vx, y: y[i] }))
@@ -461,12 +461,12 @@ function drawTrajectoryChart(ctx, canvas, result) {
 
   ctx.fillStyle = "#111827";
   ctx.font = "16px sans-serif";
-  ctx.fillText("前後移動 (cm)", padL + w / 2 - 42, canvas.height - 20);
+  ctx.fillText("投球方向 (cm, 0°)", padL + w / 2 - 60, canvas.height - 20);
 
   ctx.save();
   ctx.translate(24, padT + h / 2 + 40);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText("上下移動 (cm, 上が＋)", 0, 0);
+  ctx.fillText("腹背方向 (cm, 90°/270°)", 0, 0);
   ctx.restore();
 }
 
@@ -476,8 +476,8 @@ function drawTimeSeriesChart(ctx, canvas, result) {
 
   const frames = result.frames;
   const times = frames.map((f) => f.timeSec);
-  const xVals = frames.map((f) => f.hipDxCmSmooth);
-  const yVals = frames.map((f) => f.hipDyCmSmooth);
+  const xVals = frames.map((f) => f.hipForwardCmSmooth);
+  const yVals = frames.map((f) => f.hipSideCmSmooth);
 
   const validVals = [...xVals, ...yVals].filter(isFiniteNumber);
   if (!validVals.length) return;
@@ -548,8 +548,8 @@ function drawTimeSeriesChart(ctx, canvas, result) {
 
   ctx.fillStyle = "#111827";
   ctx.font = "16px sans-serif";
-  ctx.fillText("青: 前後移動", padL, 28);
-  ctx.fillText("赤: 上下移動", padL + 160, 28);
+  ctx.fillText("青: 投球方向", padL, 28);
+  ctx.fillText("赤: 腹背方向", padL + 160, 28);
   ctx.fillText("時間 (s)", padL + w / 2 - 20, canvas.height - 18);
 }
 
@@ -610,6 +610,7 @@ class AnalysisWorkspace {
     this.metricStepRatio = this.root.querySelector(".metricStepRatio");
     this.metricHipXRangePct = this.root.querySelector(".metricHipXRangePct");
     this.metricHipYRangePct = this.root.querySelector(".metricHipYRangePct");
+    this.metricCameraAngle = this.root.querySelector(".metricCameraAngle");
 
     this.downloadCsvBtn = this.root.querySelector(".downloadCsvBtn");
     this.downloadPngBtn = this.root.querySelector(".downloadPngBtn");
@@ -720,6 +721,10 @@ class AnalysisWorkspace {
       "hip_dy_cm_raw",
       "hip_dx_cm_corr",
       "hip_dy_cm_corr",
+      "hip_forward_cm_raw",
+      "hip_side_cm_raw",
+      "hip_forward_cm_smooth",
+      "hip_side_cm_smooth",
       "hip_dx_cm_smooth",
       "hip_dy_cm_smooth",
       "hip_vx_cm_s",
@@ -743,6 +748,10 @@ class AnalysisWorkspace {
       f.hipDyCmRaw,
       f.hipDxCmCorr,
       f.hipDyCmCorr,
+      f.hipForwardCmRaw,
+      f.hipSideCmRaw,
+      f.hipForwardCmSmooth,
+      f.hipSideCmSmooth,
       f.hipDxCmSmooth,
       f.hipDyCmSmooth,
       f.hipVxCmS,
@@ -776,6 +785,9 @@ class AnalysisWorkspace {
     setText(this.metricHipYRangePct, isFiniteNumber(m.hipYRangePctLeg)
       ? `${round(m.hipYRangePctLeg, 1)} %`
       : "-");
+    setText(this.metricCameraAngle, isFiniteNumber(m.cameraAngleDeg)
+      ? `${round(m.cameraAngleDeg, 1)}°`
+      : "-");
   }
 
   async renderAnnotatedFrameAtIndex(frameIndex) {
@@ -805,8 +817,8 @@ class AnalysisWorkspace {
 
     const lines = [
       `time: ${round(frame.timeSec, 2)} s`,
-      `hip x: ${round(frame.hipDxCmSmooth, 1)} cm`,
-      `hip y: ${round(frame.hipDyCmSmooth, 1)} cm`,
+      `hip 0°: ${round(frame.hipForwardCmSmooth, 1)} cm`,
+      `hip 90/270°: ${round(frame.hipSideCmSmooth, 1)} cm`,
       `hip speed: ${round(frame.hipSpeedCmS, 1)} cm/s`,
       `depth corr: ${round(frame.depthCorrection, 3)}`
     ];
@@ -867,6 +879,8 @@ class AnalysisWorkspace {
       const dt = 1 / analysisFps;
       const times = buildSampleTimes(duration, analysisFps);
       const runStartTimestampMs = poseLastVideoTimestampMs + 1000;
+      const axisAnkleIdx = throwingHand === "right" ? IDX.RIGHT_ANKLE : IDX.LEFT_ANKLE;
+      const leadAnkleIdx = throwingHand === "right" ? IDX.LEFT_ANKLE : IDX.RIGHT_ANKLE;
 
       const frames = [];
       const trail = [];
@@ -899,6 +913,8 @@ class AnalysisWorkspace {
         let shoulderMid = null;
         let leftAnkle = null;
         let rightAnkle = null;
+        let axisAnkle = null;
+        let leadAnkle = null;
         let bodyHeightPx = NaN;
 
         if (landmarks) {
@@ -912,6 +928,8 @@ class AnalysisWorkspace {
 
           leftAnkle = getLandmarkXY(landmarks, IDX.LEFT_ANKLE, width, height);
           rightAnkle = getLandmarkXY(landmarks, IDX.RIGHT_ANKLE, width, height);
+          axisAnkle = getLandmarkXY(landmarks, axisAnkleIdx, width, height);
+          leadAnkle = getLandmarkXY(landmarks, leadAnkleIdx, width, height);
 
           bodyHeightPx = estimateBodyHeightPx(landmarks, width, height);
           drawPoseSkeleton(this.overlayCtx, landmarks, width, height);
@@ -935,6 +953,10 @@ class AnalysisWorkspace {
           leftAnkleYpx: leftAnkle ? leftAnkle.y : NaN,
           rightAnkleXpx: rightAnkle ? rightAnkle.x : NaN,
           rightAnkleYpx: rightAnkle ? rightAnkle.y : NaN,
+          axisAnkleXpx: axisAnkle ? axisAnkle.x : NaN,
+          axisAnkleYpx: axisAnkle ? axisAnkle.y : NaN,
+          leadAnkleXpx: leadAnkle ? leadAnkle.x : NaN,
+          leadAnkleYpx: leadAnkle ? leadAnkle.y : NaN,
           bodyHeightPx
         });
 
@@ -961,6 +983,8 @@ class AnalysisWorkspace {
         "shoulderXpx", "shoulderYpx",
         "leftAnkleXpx", "leftAnkleYpx",
         "rightAnkleXpx", "rightAnkleYpx",
+        "axisAnkleXpx", "axisAnkleYpx",
+        "leadAnkleXpx", "leadAnkleYpx",
         "bodyHeightPx"
       ];
 
@@ -984,21 +1008,25 @@ class AnalysisWorkspace {
       const firstValidFrame = frames.find(
         (f) => isFiniteNumber(f.hipXpx) && isFiniteNumber(f.hipYpx)
       );
+      const firstValidAxisFrame = frames.find(
+        (f) => isFiniteNumber(f.axisAnkleXpx) && isFiniteNumber(f.axisAnkleYpx)
+      );
 
-      if (!firstValidFrame) {
-        throw new Error("腰のランドマークが取得できませんでした。");
+      if (!firstValidFrame || !firstValidAxisFrame) {
+        throw new Error("腰または軸足ランドマークが取得できませんでした。");
       }
 
-      const originX = firstValidFrame.hipXpx;
-      const originY = firstValidFrame.hipYpx;
-      const handednessXSign = throwingHand === "left" ? -1 : 1;
+      const originHipX = firstValidFrame.hipXpx;
+      const originHipY = firstValidFrame.hipYpx;
+      const originAxisX = firstValidAxisFrame.axisAnkleXpx;
+      const originAxisY = firstValidAxisFrame.axisAnkleYpx;
 
       for (const f of frames) {
         f.pxPerCm = f.bodyHeightPx / heightCm;
         f.depthCorrection = clamp(refPxPerCm / f.pxPerCm, 0.8, 1.25);
 
-        const dxCmRaw = ((f.hipXpx - originX) / f.pxPerCm) * handednessXSign;
-        const dyCmRaw = -(f.hipYpx - originY) / f.pxPerCm;
+        const dxCmRaw = (f.hipXpx - originHipX) / f.pxPerCm;
+        const dyCmRaw = -(f.hipYpx - originHipY) / f.pxPerCm;
 
         f.hipDxCmRaw = dxCmRaw;
         f.hipDyCmRaw = dyCmRaw;
@@ -1009,11 +1037,42 @@ class AnalysisWorkspace {
         f.ankleDxCmCorr = (ankleDxPx / f.pxPerCm) * f.depthCorrection;
       }
 
-      const smoothX = movingAverage(frames.map((f) => f.hipDxCmCorr), smoothWindow);
-      const smoothY = movingAverage(frames.map((f) => f.hipDyCmCorr), smoothWindow);
+      const stepFrame = frames.reduce((best, cur) =>
+        !best || cur.ankleDxCmCorr > best.ankleDxCmCorr ? cur : best, null);
 
-      smoothX.forEach((v, i) => (frames[i].hipDxCmSmooth = v));
-      smoothY.forEach((v, i) => (frames[i].hipDyCmSmooth = v));
+      const stepAxisToLead = stepFrame
+        ? {
+            x: ((stepFrame.leadAnkleXpx - stepFrame.axisAnkleXpx) / stepFrame.pxPerCm) * stepFrame.depthCorrection,
+            y: -((stepFrame.leadAnkleYpx - stepFrame.axisAnkleYpx) / stepFrame.pxPerCm) * stepFrame.depthCorrection
+          }
+        : null;
+
+      const dirNorm = stepAxisToLead ? Math.hypot(stepAxisToLead.x, stepAxisToLead.y) : 0;
+      const forwardUnit = dirNorm > 1e-6
+        ? { x: stepAxisToLead.x / dirNorm, y: stepAxisToLead.y / dirNorm }
+        : { x: 1, y: 0 };
+      const sideUnit = { x: -forwardUnit.y, y: forwardUnit.x };
+
+      const cameraAngleDeg = ((Math.atan2(forwardUnit.y, forwardUnit.x) * 180) / Math.PI + 360) % 360;
+
+      for (const f of frames) {
+        const hipFromAxisX = ((f.hipXpx - originAxisX) / f.pxPerCm) * f.depthCorrection;
+        const hipFromAxisY = -((f.hipYpx - originAxisY) / f.pxPerCm) * f.depthCorrection;
+        f.hipForwardCmRaw = hipFromAxisX * forwardUnit.x + hipFromAxisY * forwardUnit.y;
+        f.hipSideCmRaw = hipFromAxisX * sideUnit.x + hipFromAxisY * sideUnit.y;
+      }
+
+      const smoothX = movingAverage(frames.map((f) => f.hipForwardCmRaw), smoothWindow);
+      const smoothY = movingAverage(frames.map((f) => f.hipSideCmRaw), smoothWindow);
+
+      smoothX.forEach((v, i) => {
+        frames[i].hipForwardCmSmooth = v;
+        frames[i].hipDxCmSmooth = v;
+      });
+      smoothY.forEach((v, i) => {
+        frames[i].hipSideCmSmooth = v;
+        frames[i].hipDyCmSmooth = v;
+      });
 
       const vx = gradient(smoothX, dt);
       const vy = gradient(smoothY, dt);
@@ -1023,9 +1082,6 @@ class AnalysisWorkspace {
       frames.forEach((f) => {
         f.hipSpeedCmS = Math.sqrt(f.hipVxCmS ** 2 + f.hipVyCmS ** 2);
       });
-
-      const stepFrame = frames.reduce((best, cur) =>
-        !best || cur.ankleDxCmCorr > best.ankleDxCmCorr ? cur : best, null);
 
       const estimatedStepWidthCm = stepFrame?.ankleDxCmCorr ?? NaN;
       const estimatedLegLengthCm = heightCm * 0.53;
@@ -1050,6 +1106,7 @@ class AnalysisWorkspace {
         maxHipSpeedCmS: safeMax(speedVals),
         stepFrameIndex: stepFrame?.index ?? -1,
         stepTimeSec: stepFrame?.timeSec ?? NaN,
+        cameraAngleDeg,
         refBodyHeightPx,
         detectedFrameRate: detectedCount / frames.length,
         interpolationRate
