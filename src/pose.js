@@ -7,10 +7,19 @@ import { IDX, MODEL_URL, WASM_URL } from "./constants.js";
 import { isFiniteNumber } from "./utils.js";
 
 let poseLandmarker = null;
+let visionTasksModulePromise = null;
+
+async function loadVisionTasksModule() {
+  if (!visionTasksModulePromise) {
+    visionTasksModulePromise = import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs");
+  }
+  return visionTasksModulePromise;
+}
 
 export async function ensurePoseLandmarker() {
   if (poseLandmarker) return poseLandmarker;
 
+  const { FilesetResolver, PoseLandmarker } = await loadVisionTasksModule();
   const vision = await FilesetResolver.forVisionTasks(WASM_URL);
   poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
     baseOptions: {
