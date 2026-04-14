@@ -60,10 +60,15 @@ function removeWorkspace(workspace) {
 }
 
 export function bootstrapApp() {
+    if (isBootstrapped) return;
+
+  bindDom();
+
   addWorkspaceBtn.addEventListener("click", () => {
     const ws = createWorkspace();
     ws.root.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
   createWorkspace();
+    isBootstrapped = true;
 }
