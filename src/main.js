@@ -1,10 +1,21 @@
 import { AnalysisWorkspace } from "./workspace.js";
 
-const workspaceContainer = document.getElementById("workspaceContainer");
-const workspaceTemplate = document.getElementById("workspaceTemplate");
-const addWorkspaceBtn = document.getElementById("addWorkspaceBtn");
+let workspaceContainer = null;
+let workspaceTemplate = null;
+let addWorkspaceBtn = null;
 
 const workspaceList = [];
+let isBootstrapped = false;
+
+function bindDom() {
+  workspaceContainer = document.getElementById("workspaceContainer");
+  workspaceTemplate = document.getElementById("workspaceTemplate");
+  addWorkspaceBtn = document.getElementById("addWorkspaceBtn");
+
+  if (!workspaceContainer || !workspaceTemplate || !addWorkspaceBtn) {
+    throw new Error("初期化に必要なDOM要素が見つかりません。HTMLのID変更を確認してください。");
+  }
+}
 
 function refreshWorkspaceTitles() {
   workspaceList.forEach((ws, idx) => ws.rename(idx + 1));
